@@ -1,0 +1,3320 @@
+---
+title: "IMPORTING DATA : RESEARCH PROJECT"
+output:
+  html_document:
+    code_folding: hide
+    df_print: kable
+    theme: 
+      version: 4
+      bootswatch: minty
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+
+```{r Packages to Laod, include = FALSE}
+library(tidyverse)
+library(readxl)
+library(rstanarm)
+library(brms)
+library(see)
+library(lsr)
+library(insight)
+library(bayestestR)
+library(BayesFactor)
+library(bayesplot)
+library(kableExtra)
+library(ggdist)
+library(tidybayes)
+library(ggplot2)
+library(distributional)
+library(modelr)
+library(papaja) 
+library(gridExtra) 
+library(cowplot)
+library(pander)
+library(ggmcmc)
+```
+
+```{r setup, include=FALSE}
+require("knitr")
+## setting working directory
+
+opts_chunk$set(warning = FALSE,
+                      message = FALSE, 
+               eval = FALSE, 
+               setwd("~/Data"))
+opts_knit$set(root.dir = "~/Data")
+```
+
+
+# Cohort 5 
+
+## Run 1 
+
+```{r importing cohort005_1 preconditioning}
+
+# Set the working directory to the place where the folder of files is stored 
+setwd("~/DataForRayman/coho0005/preconditioning/2018-02-03-deval_preconditioning")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/preconditioning/2018-02-03-deval_preconditioning", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED -- this is difficult to utilize as is because of how the columns are displayed in the text file
+
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+## changing the events to levels and adding labels -- utilized the key in the text file that stated what each one means. 
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%        # removing unnecessary columns                  
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>%  # changing the names of the columns 
+  unite(Date, c("year", "month", "day", "HMS"))  # putting the dates together 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1,  # adding the day from the first date listed in teh files 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6, 
+  Date == dates[7] ~ 7,
+  Date == dates[8] ~ 8))
+
+
+parsed_data<- parsed_data %>% mutate(
+  Flavor_A = case_when(  # adding the flavor for the mice from the xlx file
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$A))%>% mutate(
+      Flavor_X = case_when(  # adding the flavor for the mice from the xlx file
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X)) %>% 
+  mutate(  # adding the flavor for the mice from the xlx file
+      Flavor_B = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$B)) %>%
+  mutate(  # adding the flavor for the mice from the xlx file
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y)) %>% 
+  mutate(  # adding the session for the mice by combining 2 days together
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3,
+                          Day == 7 | Day == 8 ~ 4)) %>% 
+  mutate(
+    Condition = case_when(  # adding the condition for the mice from the xlx file
+      is.na(Flavor_B) ~ "AX",
+      is.na(Flavor_A) ~ "BY")) %>% 
+  mutate(
+    Cage = case_when(  # adding the cage for the mice from the xlx file
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 1,
+      Cohort = 5,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when( # adding the virus for the mice from the xlx file
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(
+   Box = case_when(   # adding the box name for the mice from the xlx file
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+
+
+
+```
+
+```{r saving  aggregated data -- preconditioing c5 run 1 }
+precond_cohort5_1_ALL<-parsed_data
+
+precond_cohort5_1 <- precond_cohort5_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(precond_cohort5_1, "~/DataForRayman/precond_cohort5_1.csv")
+
+```
+
+```{r importing cohort005_1 conditioning}
+
+
+setwd("~/DataForRayman/coho0005/conditioning/2018-02-11-deval_conditioning")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/conditioning/2018-02-11-deval_conditioning", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+parsed_data<- parsed_data %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X)) %>% 
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_Y) ~ "X",
+      is.na(Flavor_X) ~ "Y")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mH") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 2,
+      Cohort = 5,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+```
+
+```{r saving  aggregated data -- conditioning c5 run 1 }
+cond_cohort5_1_ALL<-parsed_data
+
+cond_cohort5_1 <- cond_cohort5_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(cond_cohort5_1, "~/DataForRayman/cond_cohort5_1.csv")
+
+```
+
+```{r importing cohort005_1 test}
+
+setwd("~/DataForRayman/coho0005/test/2018-02-18-deval_test1")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/test/2018-02-18-deval_test1", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+
+parsed_data<- parsed_data %>% mutate(
+     Flavor_A = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$A)) %>% 
+  mutate(
+     Flavor_B = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$B)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 3,
+      Cohort = 5,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(X_side = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$x_side,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$x_side,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$x_side,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$x_side, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$x_side,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$x_side,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$x_side))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+```
+
+
+```{r saving  aggregated data -- test 5 run 1 }
+test_cohort5_1_ALL<-parsed_data
+
+test_cohort5_1 <- test_cohort5_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(test_cohort5_1, "~/DataForRayman/test_cohort5_1.csv")
+
+```
+
+```{r combining cohort 5 run 1 }
+todo_cohort5_1<-bind_rows(precond_cohort5_1, cond_cohort5_1, test_cohort5_1)
+
+write_csv(todo_cohort5_1, "~/DataForRayman/todo_cohort5_1.csv")
+```
+
+
+
+
+
+### AVG Times
+
+```{r finding extras and removing them cohort 5_1 }
+
+
+
+todo_cohort5_1<- read_csv("~/DataForRayman/todo_cohort5_1.csv")
+
+
+Event2Number <- tibble(Event = c('Left_In','Left_Out','Center_In','Center_Out','Right_In',
+                                 'Right_Out'),
+                       Value = c(1,2,5,6,8,9))
+
+
+left_misc<- todo_cohort5_1%>% filter(Event %in%  c('Left_In','Left_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+right_misc<- todo_cohort5_1%>% filter(Event %in%  c('Right_In','Right_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+center_misc<- todo_cohort5_1%>% filter(Event %in%  c('Center_In','Center_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+all_misc<- bind_rows(left_misc, right_misc, center_misc)
+print(all_misc)
+all_misc<-all_misc %>%  select(-c(23,24,25))
+
+nrow(all_misc)
+nrow(todo_cohort5_1)
+
+todo_cohort5_1_corrected<- anti_join(todo_cohort5_1, all_misc)
+
+nrow(todo_cohort5_1_corrected)
+write_csv(todo_cohort5_1_corrected, "todo_cohort5_1_corrected.csv")
+
+```
+
+
+```{r avg times file cohort 5 run 1 }
+
+todo_cohort5_1_corrected<- read_csv("~/Data/todo_cohort5_1_corrected.csv")
+     
+# seperating in and out
+dat_todos <- todo_cohort5_1_corrected %>% filter(I != 'P') %>% 
+  separate(Event, c("event_type", "in_out"), sep = "_")
+
+# seperating right in and out
+right_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Right")  %>%
+  rename(time_in = Time , time_in_log = Time_log )
+
+right_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Right") %>%
+  select(time_out = Time, time_out_log = Time_log)
+right_events_todos <- bind_cols(right_in_events_todos, right_out_events_todos)
+
+# seperating left in and left out
+left_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Left") %>%
+  rename(time_in = Time, time_in_log = Time_log) 
+left_in_events_todos<- left_in_events_todos
+
+left_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Left") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+left_events_todos <- bind_cols(left_in_events_todos, left_out_events_todos)
+
+# joiining all together
+left_right_events_todos <- bind_rows(right_events_todos, left_events_todos)
+
+# seperating Center_In and Center_Out
+center_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Center") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+center_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Center") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+center_events_todos <- bind_cols(center_in_events_todos, center_out_events_todos)
+
+# joiining all together
+left_right_center_events_todos <- bind_rows(left_right_events_todos, center_events_todos)
+
+
+
+
+
+
+# move time_out next to time_in 
+
+# remove the in_out column 
+
+by_Phase_Virus_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Virus, Session, Event=event_type, Condition) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              count = n()) 
+
+
+# remove the in_out column 
+
+by_Phase_Event_Session_ID_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session, Event=event_type, Condition, Virus) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              count = n()) 
+
+# Poking Times by Phase,  Session , Virus, and Flavors 
+
+by_ID_Session_Event_Flav_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in, 
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session,  Virus, Condition, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n())
+
+avg_across_sessions_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID,Virus, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_Pokes = n())
+
+
+
+# Poking Times by individual ID 
+by_ID_Virus_Session_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Session, ID, Virus,  Event=event_type) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_pokes = n())
+
+write_csv(by_ID_Session_Event_Flav_5_1, "~/DataForRayman/cohort5_1_times_ID_Session_Event_Flav.csv")
+write_csv(avg_across_sessions_5_1, "~/DataForRayman/cohort5_1_times_avg_across_sessions.csv")
+write_csv(by_ID_Virus_Session_5_1, "~/DataForRayman/cohort5_1_times_by_ID_Virus_Session.csv")
+write_csv(by_Phase_Event_Session_ID_5_1, "~/DataForRayman/cohort5_1_times_by_Phase_Event_Session_ID.csv")
+
+## Geting means 
+
+
+
+by_Phase_Virus_5_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Virus, Session, Event=event_type, Condition, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n()) 
+
+
+
+cohort5_1_Time_EVENT_PHASE_VIRUS <- by_Phase_Virus_5_1 %>% 
+  group_by(Phase, Virus, X_side, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+
+cohort5_1_avg_poking_times_by_Phase_Virus_Session  <- by_ID_Session_Event_Flav_5_1 %>% 
+  group_by(Phase, Session, Virus, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+
+
+cohort5_1_avg_poking_times_by_ID_Flavor <- by_ID_Session_Event_Flav_5_1 %>% 
+  group_by(Phase, Virus, ID, Session, Event, Condition, X_side, Flavor_A, Flavor_X, Flavor_B, Flavor_Y) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            n_Pokes)
+
+
+
+write_csv(cohort5_1_avg_poking_times_by_Phase_Virus_Session , "~/DataForRayman/cohort5_1_avg_poking_times_by_Phase_Virus_Session.csv")
+write_csv(cohort5_1_avg_poking_times_by_ID_Flavor, "~/DataForRayman/cohort5_1_avg_poking_times_by_ID_Flavor.csv")
+
+
+
+```
+
+```{r standardizing time cohort 5 run 1}
+cohort5_1_avg_poking_times_by_Phase_Virus_Session<- cohort5_1_avg_poking_times_by_Phase_Virus_Session %>%
+  mutate(Time_s = (Mean_Time_s - mean(Mean_Time_s)) / sd(Mean_Time_s))
+
+cohort5_1_avg_poking_times_by_ID_Flavor%>%
+  mutate(Time_s = (Mean_Time_s - mean(Mean_Time_s)) / sd(Mean_Time_s))
+```
+
+```{r reading in avg files cohort005_1 }
+
+todo_cohort5_1<- read_csv("todo_cohort5_1.csv")
+by_ID_Session_Event_Flav_5_1<- read_csv("cohort5_1_times_ID_Session_Event_Flav.csv")
+avg_across_sessions_5_1 <- read_csv("cohort5_1_times_avg_across_sessions.csv")
+by_ID_Virus_Session_5_1<- read_csv("cohort5_1_times_by_ID_Virus_Session.csv")
+by_Phase_Event_Session_ID_5_1<- read_csv( "cohort5_1_times_by_Phase_Event_Session_ID.csv")
+
+
+cohort5_1_avg_poking_times_by_ID_Flavor<- read_csv("cohort5_1_avg_poking_times_by_ID_Flavor .csv")
+cohort5_1_avg_poking_times_by_ID_Flavor <- read_csv("cohort5_1_avg_poking_times_by_ID_Flavor.csv")
+```
+
+```{r TABLES cohort 5 run 1}
+head_cohort5_1<-nice_table(head(todo_cohort5_1))
+head_2<- head(todo_cohort5) %>% kbl() %>% kable_classic()
+ save_as_docx(head_2, path = "~/head_cohort5_1.docx")
+
+dat_1<-todo_cohort5 %>%  head() 
+
+dat_1 %>% regulartable() %>%   add_footer(., model = "* Cohort 5 after wrangling") 
+
+```
+
+
+
+## Run 2
+
+```{r importing cohort005_2 preconditioning}
+
+# Set the working directory to the place where the folder of files is stored 
+setwd("~/DataForRayman/coho0005/preconditioning/2018-02-03-deval_preconditioning2")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/preconditioning/2018-02-03-deval_preconditioning2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED -- this is difficult to utilize as is because of how the columns are displayed in the text file
+
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+## changing the events to levels and adding labels -- utilized the key in the text file that stated what each one means. 
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%        # removing unnecessary columns                  
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>%  # changing the names of the columns 
+  unite(Date, c("year", "month", "day", "HMS"))  # putting the dates together 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1,  # adding the day from the first date listed in teh files 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6, 
+  Date == dates[7] ~ 7,
+  Date == dates[8] ~ 8))
+
+
+parsed_data<- parsed_data %>% mutate(
+  Flavor_A = case_when(  # adding the flavor for the mice from the xlx file
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$A))%>% mutate(
+      Flavor_X = case_when(  # adding the flavor for the mice from the xlx file
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X)) %>% 
+  mutate(  # adding the flavor for the mice from the xlx file
+      Flavor_B = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$B)) %>%
+  mutate(  # adding the flavor for the mice from the xlx file
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y)) %>% 
+  mutate(  # adding the session for the mice by combining 2 days together
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3,
+                          Day == 7 | Day == 8 ~ 4)) %>% 
+  mutate(
+    Condition = case_when(  # adding the condition for the mice from the xlx file
+      is.na(Flavor_B) ~ "AX",
+      is.na(Flavor_A) ~ "BY")) %>% 
+  mutate(
+    Cage = case_when(  # adding the cage for the mice from the xlx file
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 1,
+      Cohort = 5,
+      Run = 2
+      ) %>% 
+mutate(Virus = case_when( # adding the virus for the mice from the xlx file
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(
+   Box = case_when(   # adding the box name for the mice from the xlx file
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+
+
+
+```
+
+```{r saving  aggregated data -- preconditioing c5 run 2 }
+precond_cohort5_2_ALL<-parsed_data
+
+precond_cohort5_2 <- precond_cohort5_2_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(precond_cohort5_2, "~/DataForRayman/precond_cohort5_2.csv")
+
+```
+
+```{r importing cohort005_2 conditioning}
+
+
+setwd("~/DataForRayman/coho0005/conditioning/2018-02-11-deval_conditioning2")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/conditioning/2018-02-11-deval_conditioning2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+parsed_data<- parsed_data %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X)) %>% 
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_Y) ~ "X",
+      is.na(Flavor_X) ~ "Y")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mH") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 2,
+      Cohort = 5,
+      Run = 2
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+```
+
+```{r saving  aggregated data -- conditioning c5 run 2 }
+cond_cohort5_2_ALL<-parsed_data
+
+cond_cohort5_2 <- cond_cohort5_2_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(cond_cohort5_2, "~/DataForRayman/cond_cohort5_2.csv")
+
+```
+
+```{r importing cohort005_2 test}
+
+setwd("~/DataForRayman/coho0005/test/2018-02-18-deval_test2")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0005/coho0005_cb1_AB_20180131.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0005/test/2018-02-18-deval_test2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+
+parsed_data<- parsed_data %>% mutate(
+     Flavor_A = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$A)) %>% 
+  mutate(
+     Flavor_B = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$B)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 3,
+      Cohort = 5,
+      Run = 2
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(X_side = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$x_side,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$x_side,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$x_side,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$x_side, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$x_side,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$x_side,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$x_side))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+```
+
+
+```{r saving  aggregated data -- test 5 run 2 }
+test_cohort5_2_ALL<-parsed_data
+
+test_cohort5_2 <- test_cohort5_2_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(test_cohort5_2, "~/DataForRayman/test_cohort5_2.csv")
+
+```
+
+```{r combining cohort 5 run 2 }
+todo_cohort5_2<-bind_rows(precond_cohort5_2, cond_cohort5_2, test_cohort5_2)
+
+write_csv(todo_cohort5_2, "~/DataForRayman/todo_cohort5_2.csv")
+```
+
+
+
+
+
+
+
+
+### AVG Times
+
+```{r finding extras and removing them cohort 5_2 }
+
+todo_cohort5_2<- read_csv("~/DataForRayman/todo_cohort5_2.csv")
+
+Event2Number <- tibble(Event = c('Left_In','Left_Out','Center_In','Center_Out','Right_In',
+                                 'Right_Out'),
+                       Value = c(1,2,5,6,8,9))
+
+
+left_misc<- todo_cohort5_2%>% filter(Event %in%  c('Left_In','Left_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+right_misc<- todo_cohort5_2%>% filter(Event %in%  c('Right_In','Right_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+center_misc<- todo_cohort5_2%>% filter(Event %in%  c('Center_In','Center_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+all_misc<- bind_rows(left_misc, right_misc, center_misc)
+print(all_misc)
+all_misc<-all_misc %>%  select(-c(23,24,25))
+
+nrow(all_misc)
+nrow(todo_cohort5_2)
+
+todo_cohort5_2_corrected<- anti_join(todo_cohort5_2, all_misc)
+
+nrow(todo_cohort5_2_corrected)
+write_csv(todo_cohort5_2_corrected, "~/DataForRayman/todo_cohort5_2_corrected.csv")
+
+```
+
+```{r avg times file cohort 5 run 2 }
+
+todo_cohort5_2_corrected<-
+# seperating in and out
+dat_todos <- todo_cohort5_2_corrected %>% filter(I != 'P') %>% 
+  separate(Event, c("event_type", "in_out"), sep = "_")
+
+# seperating right in and out
+right_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Right") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+right_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Right") %>%
+  select(time_out = Time, time_out_log = Time_log)
+right_events_todos <- bind_cols(right_in_events_todos, right_out_events_todos)
+
+# seperating left in and left out
+left_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Left") %>%
+  rename(time_in = Time, time_in_log = Time_log) 
+left_in_events_todos<- left_in_events_todos
+
+left_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Left") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+left_events_todos <- bind_cols(left_in_events_todos, left_out_events_todos)
+
+# joiining all together
+left_right_events_todos <- bind_rows(right_events_todos, left_events_todos)
+
+# seperating Center_In and Center_Out
+center_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Center") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+center_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Center") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+center_events_todos <- bind_cols(center_in_events_todos, center_out_events_todos)
+
+# joiining all together
+left_right_center_events_todos <- bind_rows(left_right_events_todos, center_events_todos)
+
+
+
+
+
+
+# move time_out next to time_in 
+
+# remove the in_out column 
+
+by_Phase_Event_Session_ID_5_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session, Event=event_type, Condition, Virus) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              count = n()) 
+
+# Poking Times by Phase,  Session , Virus, and Flavors 
+
+by_ID_Session_Event_Flav_5_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in, 
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session,  Virus, Condition, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n())
+
+avg_across_sessions_5_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID,Virus, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_Pokes = n())
+
+
+
+# Poking Times by individual ID 
+by_ID_Virus_Session_5_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Session, ID, Virus,  Event=event_type) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_pokes = n())
+
+write_csv(by_ID_Session_Event_Flav_5_2, "~/DataForRayman/cohort5_2_times_ID_Session_Event_Flav.csv")
+write_csv(avg_across_sessions_5_2, "~/DataForRayman/cohort5_2_times_avg_across_sessions.csv")
+write_csv(by_ID_Virus_Session_5_2, "~/DataForRayman/cohort5_2_times_by_ID_Virus_Session.csv")
+write_csv(by_Phase_Event_Session_ID_5_2, "~/DataForRayman/cohort5_2_times_by_Phase_Event_Session_ID.csv")
+
+
+by_Phase_Virus_5_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Virus, Session, Event=event_type, Condition, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n()) 
+
+
+
+cohort5_2_Time_EVENT_PHASE_VIRUS <- by_Phase_Virus_5_2 %>% 
+  group_by(Phase, Virus, X_side, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+## Geting means 
+
+cohort5_2_avg_poking_times_by_Phase_Virus_Session  <- by_ID_Session_Event_Flav_5_2 %>% 
+  group_by(Phase, Session, Virus, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+
+
+cohort5_2_avg_poking_times_by_ID_Flavor <- by_ID_Session_Event_Flav_5_2 %>% 
+  group_by(Phase, Virus, ID, Session, Event, Condition, X_side, Flavor_A, Flavor_X, Flavor_B, Flavor_Y) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            n_Pokes)
+
+
+
+write_csv(cohort5_2_avg_poking_times_by_Phase_Virus_Session , "~/DataForRayman/cohort5_2_avg_poking_times_by_Phase_Virus_Session.csv")
+write_csv(cohort5_2_avg_poking_times_by_ID_Flavor, "~/DataForRayman/cohort5_2_avg_poking_times_by_ID_Flavor.csv")
+
+
+
+```
+
+
+
+## Combining Both Runs 
+
+```{r combining cohort 5 RAW}
+
+todo_cohort5<-bind_rows(todo_cohort5_1_corrected, todo_cohort5_2_corrected) %>% mutate(Phase = factor(Phase, 
+                           levels = c(1,2,3), 
+                           labels = c("Precond", "Cond", "Test")))
+
+write_csv(todo_cohort5, "~/DataForRayman/todo_cohort5.csv")
+```
+
+```{r combining cohort 5 AVG Times}
+cohort_5_avg_poking<- 
+  bind_rows(
+  (cohort5_1_avg_poking_times_by_ID_Flavor %>%  mutate(Run = 1)), (cohort5_2_avg_poking_times_by_ID_Flavor %>%  mutate(Run = 2))
+) 
+
+
+cohort_5_avg_poking_by_Phase<- 
+  bind_rows(
+  (cohort5_1_avg_poking_times_by_Phase_Virus_Session %>%  mutate(Run = 1)), (cohort5_2_avg_poking_times_by_Phase_Virus_Session %>%  mutate(Run = 2))
+) 
+
+
+write_csv(cohort_5_avg_poking, "~/DataForRayman/cohort_5_avg_poking.csv")
+
+write_csv(cohort_5_avg_poking_by_Phase, "~/DataForRayman/cohort_5_avg_poking_byPhase.csv")
+
+
+avg_cohort_5_By_VIRUS <- bind_rows(cohort5_1_Time_EVENT_PHASE_VIRUS, cohort5_2_Time_EVENT_PHASE_VIRUS)
+
+```
+
+
+
+```{r reading in cohort 5}
+todo_cohort5<- read_csv("todo_cohort5.csv")
+
+cohort_5_avg_poking<- read_csv("cohort_5_avg_poking.csv")
+```
+
+```{r some maniuplation of data frame cohort 5 - dummy coding, eval = FALSE, include = FALSE}
+cohort_5_1 <- 
+cohort_5_avg_poking%>%
+  mutate(poke_center = ifelse(Event == "Center", 1, 0),
+         poke_right = ifelse(Event == "Right", 1, 0),
+         poke_left   = ifelse(Event == "Left", 1, 0)) %>%
+  mutate(virus_eYFP = ifelse(Virus == "5-CamK2-eYFP", 1, 0),
+         virus_JAWS = ifelse(Virus == "9-CamK2-Jaws-GFP", 1, 0)) %>% 
+  mutate(flav_sucrose = ifelse(Flavor_A == "Sucrose"| Flavor_B == "Sucrose", 1, 0),
+         flav_saline = ifelse(Flavor_A == "Saline" | Flavor_B == "Saline", 1, 0),
+         flav_quinine = ifelse(Flavor_X == "Quinine" | Flavor_Y == "Quinine", 1, 0),
+         flav_hcl = ifelse(Flavor_X == "HCl" | Flavor_Y == "HCl", 1, 0))%>%
+  mutate(phase_precond = ifelse(Phase == "Precond", 1, 0),
+         phase_cond = ifelse(Phase == "Cond", 1, 0),
+         phase_test   = ifelse(Phase == "Test", 1, 0))
+
+
+```
+
+# Cohort 6 
+
+## Run 1
+```{r importing cohort006_1 preconditioning}
+setwd("~/DataForRayman/coho0006/preconditioning/2018-05-23-deval_preconditioning")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0006/preconditioning/2018-05-23-deval_preconditioning", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6, 
+  Date == dates[7] ~ 7,
+  Date == dates[8] ~ 8))
+
+
+parsed_data<- parsed_data %>% mutate(
+  Flavor_A = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$A)) %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X)) %>% 
+  mutate(
+      Flavor_B = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$B)) %>%
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3,
+                          Day == 7 | Day == 8 ~ 4)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_B) ~ "AX",
+      is.na(Flavor_A) ~ "BY")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 1,
+      Cohort = 6,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+
+```
+
+```{r saving  aggregated data -- preconditioing c6 run 1 }
+precond_cohort6_1_ALL<-parsed_data
+
+precond_cohort6_1 <- precond_cohort6_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(precond_cohort6_1, "~/DataForRayman/precond_cohort6_1.csv")
+
+```
+
+
+
+```{r importing cohort006_1 conditioning}
+
+setwd("~/DataForRayman/coho0006/conditioning/2018-05-31-deval_conditioning")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0006/conditioning/2018-05-31-deval_conditioning", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+parsed_data<- parsed_data %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X,
+              ID == MID[8] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[8])$X)) %>% 
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y,
+              ID == MID[8] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[8])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_Y) ~ "X",
+      is.na(Flavor_X) ~ "Y")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mH") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 2,
+      Cohort = 6,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus,
+        ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+cond_cohort6_1<-parsed_data
+
+#write_csv(cond_cohort6_1, "cond_cohort6_1.csv")
+
+```
+
+```{r saving  aggregated data -- conditioning c6 run 1 }
+cond_cohort6_1_ALL<-parsed_data
+
+cond_cohort6_1 <- cond_cohort6_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(cond_cohort6_1, "~/DataForRayman/cond_cohort6_1.csv")
+
+```
+
+```{r importing cohort006_1 test}
+setwd("~/DataForRayman/coho0006/test/2018-06-07-deval_test1")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0006/test/2018-06-07-deval_test1", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+
+parsed_data<- parsed_data %>% mutate(
+     Flavor_A = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$A)) %>% 
+  mutate(
+     Flavor_B = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$B)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 3,
+      Cohort = 6,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus))%>% 
+  mutate(X_side = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$x_side,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$x_side,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$x_side,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$x_side, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$x_side,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$x_side,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$x_side))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+```
+
+
+```{r saving  aggregated data -- test c6 run 1 }
+test_cohort6_1_ALL<-parsed_data
+
+test_cohort6_1 <- test_cohort6_1_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(test_cohort6_1, "~/DataForRayman/test_cohort6_1.csv")
+
+```
+
+```{r combining cohort 6 run 1 }
+todo_cohort6_1<-bind_rows(precond_cohort6_1, cond_cohort6_1, test_cohort6_1)
+
+write_csv(todo_cohort6_1, "~/DataForRayman/todo_cohort6_1.csv")
+```
+
+### AVg Times 
+
+```{r finding extras and removing them cohort 6 1 }
+
+# todo_cohort6_1<- read_csv("todo_cohort6_1.csv")
+
+
+Event2Number <- tibble(Event = c('Left_In','Left_Out','Center_In','Center_Out','Right_In',
+                                 'Right_Out'),
+                       Value = c(1,2,5,6,8,9))
+
+left_misc<- todo_cohort6_1%>% filter(Event %in%  c('Left_In','Left_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+left_misc<- todo_cohort6_1%>% filter(Event %in%  c('Left_In','Left_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+right_misc<- todo_cohort6_1%>% filter(Event %in%  c('Right_In','Right_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+center_misc<- todo_cohort6_1%>% filter(Event %in%  c('Center_In','Center_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+all_misc<- bind_rows(left_misc, right_misc, center_misc)
+print(all_misc)
+all_misc<-all_misc %>%  select(-c(21,22,23))
+
+nrow(all_misc)
+nrow(todo_cohort6_1)
+
+todo_cohort6_1<- anti_join(todo_cohort6_1, all_misc)
+
+todo_cohort6_1_corrected<- todo_cohort6_1
+
+write_csv(todo_cohort6_1_corrected, "~/DataForRayman/todo_cohort6_1_corrected.csv")
+```
+
+```{r avg times file cohort 6 run 1 }
+
+     
+# seperating in and out
+dat_todos <- todo_cohort6_1_corrected %>% filter(I != 'P') %>% 
+  separate(Event, c("event_type", "in_out"), sep = "_")
+
+# seperating right in and out
+right_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Right") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+right_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Right") %>%
+  select(time_out = Time, time_out_log = Time_log)
+right_events_todos <- bind_cols(right_in_events_todos, right_out_events_todos)
+
+# seperating left in and left out
+left_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Left") %>%
+  rename(time_in = Time, time_in_log = Time_log) 
+left_in_events_todos<- left_in_events_todos
+
+left_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Left") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+left_events_todos <- bind_cols(left_in_events_todos, left_out_events_todos)
+
+# joiining all together
+left_right_events_todos <- bind_rows(right_events_todos, left_events_todos)
+
+# seperating Center_In and Center_Out
+center_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Center") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+center_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Center") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+center_events_todos <- bind_cols(center_in_events_todos, center_out_events_todos)
+
+# joiining all together
+left_right_center_events_todos <- bind_rows(left_right_events_todos, center_events_todos)
+
+
+
+
+
+
+# move time_out next to time_in 
+
+# remove the in_out column 
+
+by_Phase_Event_Session_ID_6_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session, Event=event_type, Condition, Virus) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              count = n()) 
+
+# Poking Times by Phase,  Session , Virus, and Flavors 
+
+by_ID_Session_Event_Flav_6_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in, 
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session,  Virus, Condition, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n())
+
+avg_across_sessions_6_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID,Virus, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_Pokes = n())
+
+
+
+# Poking Times by individual ID 
+by_ID_Virus_Session_6_1<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Session, ID, Virus,  Event=event_type) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_pokes = n())
+
+write_csv(by_ID_Session_Event_Flav_6_1, "~/DataForRayman/cohort6_1_times_ID_Session_Event_Flav.csv")
+write_csv(avg_across_sessions_6_1, "~/DataForRayman/cohort6_1_times_avg_across_sessions.csv")
+write_csv(by_ID_Virus_Session_6_1, "~/DataForRayman/cohort6_1_times_by_ID_Virus_Session.csv")
+write_csv(by_Phase_Event_Session_ID_6_1, "~/DataForRayman/cohort6_1_times_by_Phase_Event_Session_ID.csv")
+
+## Geting means 
+
+cohort6_1_avg_poking_times_by_Phase_Virus_Session  <- by_ID_Session_Event_Flav_6_1 %>% 
+  group_by(Phase, Session, Virus, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+
+
+cohort6_1_avg_poking_times_by_ID_Flavor <- by_ID_Session_Event_Flav_6_1 %>% 
+  group_by(Phase, Virus, ID, Session, Event, Condition, X_side, Flavor_A, Flavor_X, Flavor_B, Flavor_Y) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            n_Pokes)
+
+
+
+write_csv(cohort6_1_avg_poking_times_by_Phase_Virus_Session , "~/DataForRayman/cohort6_1_avg_poking_times_by_Phase_Virus_Session.csv")
+write_csv(cohort6_1_avg_poking_times_by_ID_Flavor, "~/DataForRayman/cohort6_1_avg_poking_times_by_ID_Flavor.csv")
+
+
+
+```
+
+```{r reading in avg files cohort006_1 }
+by_ID_Session_Event_Flav_6_1<- read_csv("cohort6_1_times_ID_Session_Event_Flav.csv")
+avg_across_sessions_6_1 <- read_csv("cohort6_1_times_avg_across_sessions.csv")
+by_ID_Virus_Session_6_1<- read_csv("cohort6_1_times_by_ID_Virus_Session.csv")
+by_Phase_Event_Session_ID_6_1<- read_csv( "cohort6_1_times_by_Phase_Event_Session_ID.csv")
+
+
+cohort6_1_avg_poking_times_by_ID_Flavor<- read_csv("cohort6_1_avg_poking_times_by_ID_Flavor .csv")
+cohort6_1_avg_poking_times_by_ID_Flavor <- read_csv("cohort6_1_avg_poking_times_by_ID_Flavor.csv")
+```
+
+
+## Run 2
+
+```{r importing cohort006_2 preconditioning}
+setwd("~/DataForRayman/coho0006/preconditioning/2018-05-23-deval_preconditioning2")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0006/preconditioning/2018-05-23-deval_preconditioning2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6, 
+  Date == dates[7] ~ 7,
+  Date == dates[8] ~ 8))
+
+
+parsed_data<- parsed_data %>% mutate(
+  Flavor_A = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$A,
+              ID == MID[8] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[8])$A)) %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 | Day == 7 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X,
+              ID == MID[8] & (Day == 1| Day == 3 | Day ==5 | Day == 7) ~ 
+                subset(cb1, `Mouse ID` == MID[8])$X)) %>% 
+  mutate(
+      Flavor_B = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$B,
+              ID == MID[8] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[8])$B)) %>%
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y,
+              ID == MID[8] & (Day == 2| Day == 4 | Day ==6 | Day == 8) ~ 
+                  subset(cb1, `Mouse ID` == MID[8])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3,
+                          Day == 7 | Day == 8 ~ 4)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_B) ~ "AX",
+      is.na(Flavor_A) ~ "BY")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 1,
+      Cohort = 6,
+      Run = 1
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus,
+        ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+
+```
+```{r saving  aggregated data -- preconditioing c6 run 2 }
+precond_cohort6_2_ALL<-parsed_data
+
+precond_cohort6_2 <- precond_cohort6_2_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(precond_cohort6_2, "~/DataForRayman/precond_cohort6_2.csv")
+
+```
+
+```{r importing cohort006_2 conditioning}
+
+ setwd("~/DataForRayman/coho0006/conditioning/2018-05-31-deval_conditioning2")
+
+#load file with flavor and virus info
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+#load file with flavor and virus info
+
+
+all_files <- list.files("~/DataForRayman/coho0006/conditioning/2018-05-31-deval_conditioning2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+parsed_data<- parsed_data %>% mutate(
+      Flavor_X = case_when(
+              ID == MID[1] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[1])$X,
+              ID == MID[2] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[2])$X,
+              ID == MID[3] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[3])$X,
+              ID == MID[4] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[4])$X,
+              ID == MID[5] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[5])$X,
+              ID == MID[6] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[6])$X,
+              ID == MID[7] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[7])$X,
+              ID == MID[8] & (Day == 1| Day == 3 | Day ==5 ) ~ 
+                subset(cb1, `Mouse ID` == MID[8])$X)) %>% 
+  mutate(
+      Flavor_Y = case_when(
+              ID == MID[1] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[1])$Y,
+              ID == MID[2] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[2])$Y,
+              ID == MID[3] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[3])$Y,
+              ID == MID[4] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                    subset(cb1, `Mouse ID` == MID[4])$Y,
+              ID == MID[5] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[5])$Y,
+              ID == MID[6] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[6])$Y,
+              ID == MID[7] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[7])$Y,
+              ID == MID[8] & (Day == 2| Day == 4 | Day ==6 ) ~ 
+                  subset(cb1, `Mouse ID` == MID[8])$Y)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Condition = case_when(
+      is.na(Flavor_Y) ~ "X",
+      is.na(Flavor_X) ~ "Y")) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 2,
+      Cohort = 6,
+      Run = 2
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus,
+        ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Virus))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+cond_cohort6_2<-parsed_data
+
+#write_csv(cond_cohort6_2, "cond_cohort6_2.csv")
+
+```
+```{r savingaggregated data -- conditioning c6 run 2 }
+cond_cohort6_2_ALL<-parsed_data
+
+cond_cohort6_2 <- cond_cohort6_2_ALL %>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(cond_cohort6_2, "~/DataForRayman/cond_cohort6_2.csv")
+
+```
+
+
+```{r importing cohort006_2 test}
+
+setwd("~/DataForRayman/coho0006/test/2018-06-07-deval_test2")
+
+
+cb1<-read_excel("~/DataForRayman/coho0006/coho0006_cb1_AB_20180521.xlsx")
+
+all_files <- list.files("~/DataForRayman/coho0006/test/2018-06-07-deval_test2", pattern = ".txt")
+
+all_data <-all_files %>%  set_names(.) %>%
+  map_df(read_table2, .id = "FileName")
+
+#taking file name and seperating out mouse ID and date
+parsed_data <- all_data %>% 
+  mutate(FileName = str_replace(FileName, "txt_files/", ""),
+         FileName = str_replace(FileName, ".txt", "")) |>
+  separate(FileName, into = c("id", "year", "month", "day", "HMS")) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="on","LED_on",name)) %>% 
+                        mutate(name = ifelse(name=="LED" & `:`=="off","LED_off",name)) %>% 
+                        filter(!name=="Number")
+
+# removing rewards 
+parsed_data_rewards <-subset(parsed_data, Experiment =="{'reward_dur':")
+
+parsed_data<- parsed_data%>% filter(Experiment !="{'reward_dur':")
+
+# remove LED 
+parsed_data_LED<- parsed_data %>% filter(name == "LED_on" | name == "LED_off")
+
+parsed_data<- parsed_data %>% filter(name != "LED_on" & name != "LED_off")
+
+# removing experimental terms
+parsed_data_experiment<-parsed_data %>% filter(Experiment =="Task" | Experiment == "Subject" | Experiment == "Start" | Experiment == "{'wait_epoch':")
+
+parsed_data<-parsed_data %>% filter(Experiment !="Task" & Experiment != "Subject" & Experiment != "Start" & Experiment != "{'wait_epoch':")
+
+parsed_data <- parsed_data %>% mutate(name = factor(name,
+levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "LED_on", "LED_off", "Number"),
+                     labels = c("Wait_Epoch",
+                               "Rew_Epoch",
+                                "First_Epoch",
+                                "Session Timer",
+                                "Reward Duration",
+                               "Left_In",
+                                "Left_Out",
+                                "Right_In",
+                                "Right_Out",
+                                "Center_In",
+                                "Center_Out",
+                                "Rew Off",
+                               "No Rew",
+                                "Opto Time",
+                                "Start Rew",
+                                "LED_on",
+                               "LED_off",
+                                "Number")))  %>%  
+  select (-c(9,10)) %>%                         
+  rename('Time' = Experiment, 'Event' = name, 'ID' = id) %>% 
+  unite(Date, c("year", "month", "day", "HMS")) 
+  
+dates <- unique(parsed_data$Date)  
+MID <- unique(parsed_data$ID) 
+
+parsed_data<- parsed_data %>%  mutate(Day = case_when(
+  Date == dates[1] ~ 1, 
+  Date == dates[2] ~ 2,
+  Date == dates[3] ~ 3, 
+  Date == dates[4] ~ 4, 
+  Date == dates[5] ~ 5, 
+  Date == dates[6] ~ 6))
+
+
+parsed_data<- parsed_data %>% mutate(
+     Flavor_A = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$A,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$A,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$A,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$A,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$A,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$A,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$A,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$A)) %>% 
+  mutate(
+     Flavor_B = case_when(
+              ID == MID[1]  ~ subset(cb1, `Mouse ID` == MID[1])$B,
+              ID == MID[2]  ~ subset(cb1, `Mouse ID` == MID[2])$B,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$B,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$B,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$B,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$B,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$B,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$B)) %>% 
+  mutate(
+    Session = case_when(Day == 1 | Day == 2 ~ 1,
+                          Day == 3 | Day == 4 ~ 2,
+                          Day == 5 | Day == 6 ~ 3)) %>% 
+  mutate(
+    Cage = case_when(
+        str_starts(ID, "mA") ~ 'A',
+        str_starts(ID, "mB") ~ 'B',
+        str_starts(ID, "mC") ~ 'C',
+        str_starts(ID, "mD") ~ 'D',
+        str_starts(ID, "mE") ~ 'E',
+        str_starts(ID, "mF") ~ 'F',
+        str_starts(ID, "mG") ~ 'G',
+        str_starts(ID, "mH") ~ 'H',
+        str_starts(ID, "mI") ~ 'I')) %>% 
+  mutate_at('Time', as.double) %>% 
+  mutate(Time_s = round(Time/1000, 2)) %>% 
+  mutate(Phase = 3,
+      Cohort = 6,
+      Run = 2
+      ) %>% 
+mutate(Virus = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Virus,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Virus,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Virus,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Virus, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Virus,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Virus,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Virus,
+        ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Virus))%>% 
+  mutate(X_side = case_when(
+        ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$x_side,
+        ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$x_side,
+        ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$x_side,
+        ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$x_side, 
+        ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$x_side,
+        ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$x_side,
+        ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$x_side,
+        ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$x_side))%>% 
+  mutate(
+   Box = case_when(
+              ID == MID[1] ~ subset(cb1, `Mouse ID` == MID[1])$Box,
+              ID == MID[2] ~ subset(cb1, `Mouse ID` == MID[2])$Box,
+              ID == MID[3] ~ subset(cb1, `Mouse ID` == MID[3])$Box,
+              ID == MID[4] ~ subset(cb1, `Mouse ID` == MID[4])$Box,
+              ID == MID[5] ~ subset(cb1, `Mouse ID` == MID[5])$Box,
+              ID == MID[6] ~ subset(cb1, `Mouse ID` == MID[6])$Box,
+              ID == MID[7] ~ subset(cb1, `Mouse ID` == MID[7])$Box,
+              ID == MID[8] ~ subset(cb1, `Mouse ID` == MID[8])$Box)) %>% 
+  mutate_at('ID', as.factor) %>%
+  mutate_at('Event', as.factor) 
+
+
+
+```
+```{r saving aggregated data -- test c6 run 2}
+
+test_cohort6_2_ALL<-parsed_data
+
+test_cohort6_2 <- test_cohort6_2_ALL%>% 
+  filter (Time_s > 300)  %>% # removing the first 300 seconds of the event 
+  mutate(Time_s = Time_s - 300, # subtracting 300 from the time to start at 0 
+         Time_RAW = Time) %>% 
+  mutate(Time = Time - 300000,
+         Time_log = log2(Time_s)) %>% 
+  relocate(Time_s, .after = Time) %>% 
+  relocate(Time_RAW, .after = Time_s)  %>% 
+  relocate(Time_log, .after = Time_RAW)  %>% 
+  relocate(Session, .after = Date) %>% 
+  relocate(Day, .after = Session) %>% 
+  relocate(Phase, .after = Day) 
+  
+write_csv(test_cohort6_2, "~/DataForRayman/test_cohort6_2.csv")
+
+
+
+
+#write_csv(test_cohort6_2, "test_cohort6_2.csv")
+```
+
+```{r combining cohort 6 run 2 }
+precond_cohort6_2<- read_csv("precond_cohort6_2_2.csv")
+cond_cohort6_2<- read_csv("cond_cohort6_2.csv")
+test_cohort6_2<- read_csv("test_cohort6_2.csv")
+
+todo_cohort6_2<-bind_rows(precond_cohort6_2, cond_cohort6_2, test_cohort6_2) %>% select(!12)
+
+write_csv(todo_cohort6_2, "~/DataForRayman/todo_cohort6_2.csv")
+```
+
+
+### Avg Times
+
+```{r finding extras and removing them cohort 6 2 }
+
+
+Event2Number <- tibble(Event = c('Left_In','Left_Out','Center_In','Center_Out','Right_In',
+                                 'Right_Out'),
+                       Value = c(1,2,5,6,8,9))
+
+
+left_misc<- todo_cohort6_2%>% filter(Event %in%  c('Left_In','Left_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+right_misc<- todo_cohort6_2%>% filter(Event %in%  c('Right_In','Right_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+center_misc<- todo_cohort6_2%>% filter(Event %in%  c('Center_In','Center_Out')) %>% 
+  left_join(., Event2Number, by='Event') %>%
+  mutate(Diff_Val = c(0, diff(Value))) %>%
+  mutate(filter_event = if_else(lead(Diff_Val) == 1 | Diff_Val == 1, TRUE, FALSE)) %>% filter(filter_event == "FALSE")
+
+all_misc<- bind_rows(left_misc, right_misc, center_misc)
+print(all_misc)
+all_misc<-all_misc %>%  select(-c(21,22,23))
+
+nrow(all_misc)
+nrow(todo_cohort6_2)
+
+todo_cohort6_2<- anti_join(todo_cohort6_2, all_misc)
+
+todo_cohort6_2_corrected<-todo_cohort6_2
+nrow(todo_cohort6_2)
+
+write.csv(todo_cohort6_2_corrected,"~/DataForRayman/todo_cohort6_2_corrected.csv")
+
+```
+
+```{r avg times file cohort  run 2 }
+# seperating in and out
+dat_todos <- todo_cohort6_2_corrected %>% filter(I != 'P') %>% 
+  separate(Event, c("event_type", "in_out"), sep = "_")
+
+# seperating right in and out
+right_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Right") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+right_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Right") %>%
+  select(time_out = Time, time_out_log = Time_log)
+right_events_todos <- bind_cols(right_in_events_todos, right_out_events_todos)
+
+# seperating left in and left out
+left_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Left") %>%
+  rename(time_in = Time, time_in_log = Time_log) 
+left_in_events_todos<- left_in_events_todos
+
+left_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Left") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+left_events_todos <- bind_cols(left_in_events_todos, left_out_events_todos)
+
+# joiining all together
+left_right_events_todos <- bind_rows(right_events_todos, left_events_todos)
+
+# seperating Center_In and Center_Out
+center_in_events_todos <- dat_todos %>% 
+  filter(in_out == "In" & event_type == "Center") %>%
+  rename(time_in = Time, time_in_log = Time_log)
+
+center_out_events_todos <- dat_todos %>% 
+  filter(in_out == "Out", event_type == "Center") %>%
+  select(time_out = Time, time_out_log = Time_log)
+
+center_events_todos <- bind_cols(center_in_events_todos, center_out_events_todos)
+
+# joiining all together
+left_right_center_events_todos <- bind_rows(left_right_events_todos, center_events_todos)
+
+
+
+
+
+
+# move time_out next to time_in 
+
+# remove the in_out column 
+
+by_Phase_Event_Session_ID_6_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session, Event=event_type, Condition, Virus) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              count = n()) 
+
+# Poking Times by Phase,  Session , Virus, and Flavors 
+
+by_ID_Session_Event_Flav_6_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in, 
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID, Session,  Virus, Condition, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log),
+              n_Pokes = n())
+
+avg_across_sessions_6_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, ID,Virus, Event=event_type, Flavor_A, Flavor_X, Flavor_B, Flavor_Y, X_side) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_Pokes = n())
+
+
+
+# Poking Times by individual ID 
+by_ID_Virus_Session_6_2<- left_right_center_events_todos %>% 
+    mutate(total_time = time_out - time_in,
+           total_time_log = time_out_log - time_in_log) %>%
+    group_by(Phase, Session, ID, Virus,  Event=event_type) %>%
+    summarize(Sum_In_ms = sum(time_in), 
+              Sum_Out_ms = sum(time_out),
+              Sum_In_log = sum(time_in_log),
+              Sum_Out_log = sum(time_out_log),
+              Difference_ms = sum(total_time), 
+              Difference_s = Difference_ms/1000,
+              Difference_log = sum(total_time_log), 
+              n_pokes = n())
+
+write_csv(by_ID_Session_Event_Flav_6_2, "~/DataForRayman/cohort6_2_times_ID_Session_Event_Flav.csv")
+write_csv(avg_across_sessions_6_2, "~/DataForRayman/cohort6_2_times_avg_across_sessions.csv")
+write_csv(by_ID_Virus_Session_6_2, "~/DataForRayman/cohort6_2_times_by_ID_Virus_Session.csv")
+write_csv(by_Phase_Event_Session_ID_6_2, "~/DataForRayman/cohort6_2_times_by_Phase_Event_Session_ID.csv")
+
+## Geting means 
+
+cohort6_2_avg_poking_times_by_Phase_Virus_Session  <- by_ID_Session_Event_Flav_6_2 %>% 
+  group_by(Phase, Session, Virus, Event) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            Total_Pokes = mean(n_Pokes) )
+
+
+
+cohort6_2_avg_poking_times_by_ID_Flavor <- by_ID_Session_Event_Flav_6_2 %>% 
+  group_by(Phase, Virus, ID, Session, Event, Condition, X_side, Flavor_A, Flavor_X, Flavor_B, Flavor_Y) %>% 
+  summarise(Total_Time_s = mean(Difference_s), 
+            Total_Time_log = mean(Difference_log),
+            Median_Time_s = median(Difference_s), 
+            n_Pokes)
+
+
+
+write_csv(cohort6_2_avg_poking_times_by_Phase_Virus_Session , "~/DataForRayman/cohort6_2_avg_poking_times_by_Phase_Virus_Session.csv")
+write_csv(cohort6_2_avg_poking_times_by_ID_Flavor, "~/DataForRayman/cohort6_2_avg_poking_times_by_ID_Flavor.csv")
+
+
+
+```
+
+
+## Combining Both Runs
+```{r combining cohort 6 RAW}
+
+todo_cohort6<-bind_rows(todo_cohort6_1_corrected, todo_cohort6_2_corrected) %>% mutate(Phase = factor(Phase, 
+                           levels = c(1,2,3), 
+                           labels = c("Precond", "Cond", "Test")))
+
+write_csv(todo_cohort6, "~/DataForRayman/todo_cohort6.csv")
+```
+
+```{r combining cohort 6 AVG Times}
+cohort_6_avg_poking<- 
+  bind_rows(
+  (cohort6_1_avg_poking_times_by_ID_Flavor %>%  mutate(Run = 1)), (cohort6_2_avg_poking_times_by_ID_Flavor %>%  mutate(Run = 2))
+) 
+
+
+cohort_6_avg_poking_by_Phase<- 
+  bind_rows(
+  (cohort6_1_avg_poking_times_by_Phase_Virus_Session %>%  mutate(Run = 1)), (cohort6_2_avg_poking_times_by_Phase_Virus_Session %>%  mutate(Run = 2))
+) 
+
+
+write_csv(cohort_6_avg_poking, "~/DataForRayman/cohort_6_avg_poking.csv")
+
+write_csv(cohort_6_avg_poking_by_Phase, "~/DataForRayman/cohort_6_avg_poking_byPhase.csv")
+```
+
+
+```{r reading in avg files cohort006_2 }
+by_ID_Session_Event_Flav_6_2<- read_csv("cohort6_2_times_ID_Session_Event_Flav.csv")
+avg_across_sessions_6_2 <- read_csv("cohort6_2_times_avg_across_sessions.csv")
+by_ID_Virus_Session_6_2<- read_csv("cohort6_2_times_by_ID_Virus_Session.csv")
+by_Phase_Event_Session_ID_6_2<- read_csv( "cohort6_2_times_by_Phase_Event_Session_ID.csv")
+
+
+cohort6_2_avg_poking_times_by_ID_Flavor<- read_csv("cohort6_2_avg_poking_times_by_ID_Flavor .csv")
+cohort6_2_avg_poking_times_by_ID_Flavor <- read_csv("cohort6_2_avg_poking_times_by_ID_Flavor.csv")
+```
+
+
+
+
+# Combining Both Cohorts
+
+```{r combining both cohort 5 and 6 run 1 and run 2 RAW }
+
+todo_cohorts_5_and_6<-bind_rows(todo_cohort5, todo_cohort6)
+
+write_csv(todo_cohorts_5_and_6, "~/DataForRayman/todo_cohorts_5_and_6.csv")
+```
+
+```{r combining cohort 5 and 6 AVG Times}
+
+# cohort_6_avg_poking<- cohort_6_avg_poking%>% mutate(Phase = factor(Phase, 
+#                           levels = c(1,2,3), 
+#                           labels = c("Precond", "Cond", "Test")))
+
+cohort_5_6_avg_poking<- 
+  bind_rows(
+  (cohort_5_avg_poking %>%  mutate(Cohort = 5)), 
+  (cohort_6_avg_poking %>%  mutate(Cohort = 6))
+)
+
+cohort_5_6_avg_poking_by_Phase<- 
+  bind_rows(
+  (cohort_5_avg_poking_by_Phase %>%  mutate(Cohort = 5)),
+  (cohort_6_avg_poking_by_Phase %>%  mutate(Cohort = 6)))
+
+
+write_csv(cohort_5_6_avg_poking, "~/DataForRayman/cohort_5_6_avg_poking.csv")
+
+write_csv(cohort_5_6_avg_poking_by_Phase, "~/DataForRayman/cohort_5_6_avg_poking_byPhase.csv")
+
+```
+
+
