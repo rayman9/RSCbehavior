@@ -1,0 +1,2027 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+
+```{r Packages to Laod, include = FALSE}
+library(tidyverse)
+library(readxl)
+library(rstanarm)
+library(brms)
+library(see)
+library(lsr)
+library(insight)
+library(bayestestR)
+library(BayesFactor)
+library(bayesplot)
+library(kableExtra)
+library(ggdist)
+library(tidybayes)
+library(ggplot2)
+library(distributional)
+library(modelr)
+library(papaja) 
+library(gridExtra) 
+library(cowplot)
+library(pander)
+library(ggmcmc)
+library(rempsyc)
+```
+
+```{r setup, include=FALSE}
+require("knitr")
+## setting working directory
+
+opts_chunk$set(warning = FALSE,
+                      message = FALSE, setwd("~/DataForRayman"))
+opts_knit$set(root.dir = "~/DataForRayman")
+```
+
+```{r data to load }
+todo_cohort5 <- read_csv("~/DataForRayman/todo_cohort5.csv")
+
+todo_cohort6 <- read_csv("~/DataForRayman/todo_cohort6.csv")
+
+cohort_5_avg_poking <- read_csv("~/DataForRayman/cohort_5_avg_poking.csv")
+
+cohort_6_avg_poking <- read_csv("~/DataForRayman/cohort_6_avg_poking.csv")
+
+cohort_5_6_avg_poking <- read_csv("~/DataForRayman/cohort_5_6_avg_poking.csv")
+
+cohort_5_6_avg_poking <- cohort_5_6_avg_poking %>% unite("ID_c", ID,Cohort, remove = FALSE)
+
+cohort5_1_times_by_Phase_Event_Session_ID <- read_csv("~/DataForRayman/cohort5_1_times_by_Phase_Event_Session_ID.csv")
+
+cohort5_2_times_by_Phase_Event_Session_ID <- read_csv("~/DataForRayman/cohort5_2_times_by_Phase_Event_Session_ID.csv")
+
+cohort6_1_times_by_Phase_Event_Session_ID <- read_csv("~/DataForRayman/cohort6_1_times_by_Phase_Event_Session_ID.csv")
+
+cohort6_2_times_by_Phase_Event_Session_ID <- read_csv("~/DataForRayman/cohort6_2_times_by_Phase_Event_Session_ID.csv")
+
+
+#cohort_5_avg_poking<- cohort_5_avg_poking %>% 
+#  mutate(Cohort = 5) %>% 
+#  unite("ID_Z", ID,Cohort, remove = FALSE)
+  
+#cohort_6_avg_poking<- cohort_6_avg_poking %>% 
+#  mutate(Cohort = 6) %>% 
+#  unite("ID_Z", ID,Cohort, remove = FALSE)
+  
+#cohort_5_6_avg_poking <- bind_rows(cohort_5_avg_poking, cohort_6_avg_poking)
+```
+
+```{r some maniuplation of data frame  - dummy coding}
+dat_all <- 
+cohort_5_6_avg_poking%>%
+  mutate(poke_center = ifelse(Event == "Center", 1, 0),
+         poke_right = ifelse(Event == "Right", 1, 0),
+         poke_left   = ifelse(Event == "Left", 1, 0)) %>%
+  mutate(virus_eYFP = ifelse(Virus == "5-CamK2-eYFP", 1, 0),
+         virus_JAWS = ifelse(Virus == "9-CamK2-Jaws-GFP", 1, 0)) %>% 
+  mutate(flav_sucrose = ifelse(Flavor_A == "Sucrose"| Flavor_X == "Sucrose"|
+                               Flavor_B == "Sucrose"| Flavor_Y == "Sucrose",
+                               1, 0),
+         flav_saline = ifelse(Flavor_A == "Saline" | Flavor_X == "Saline" |
+                              Flavor_B == "Saline"| Flavor_Y == "Saline", 1, 0),
+         flav_quinine = ifelse(Flavor_A == "Quinine" | Flavor_X == "Quinine" | 
+                               Flavor_B =="Quinine" |Flavor_Y == "Quinine", 1, 0),
+         flav_hcl = ifelse(Flavor_X == "HCl" | Flavor_Y == "HCl", 1, 0))%>%
+  mutate(phase_precond = ifelse(Phase == "Precond", 1, 0),
+         phase_cond = ifelse(Phase == "Cond", 1, 0),
+         phase_test   = ifelse(Phase == "Test", 1, 0),
+         cohort_5 = ifelse(Cohort == 5, 1, 0), 
+         cohort_6 = ifelse(Cohort == 6, 1, 0))
+
+dat_all <- dat_all %>% mutate_at(c("flav_sucrose","flav_saline", "flav_hcl", "flav_quinine"), ~replace_na(.,0))
+dat_all<- dat_all%>% mutate(Phase = factor(Phase, 
+                           levels = c(1,2,3), 
+                           labels = c("Precond", "Cond", "Test")))
+
+dat_all$Session <- as.factor(dat_all$Session)
+dat_all$ID <- as.factor(dat_all$ID)
+dat_all$ID_c <- as.factor(dat_all$ID_c)
+dat_all$Condition <- as.factor(dat_all$Condition)
+dat_all$Event <- as.factor(dat_all$Event)
+write_csv(dat_all, "~/DataForRayman/dummy_coded_cohort_5_6.csv")
+
+```
+
+```{r add condition Type Fast Slow }
+dat_all<- dat_all %>% mutate(Type = case_when(
+  Cohort == 5 & ID == "mE3" ~ "Fast",
+  Cohort == 5 & ID == "mA3" ~ "Fast",
+  Cohort == 5 & ID == "mC4" ~ "Slow",
+  Cohort == 5 & ID == "mB3" ~ "Slow",
+  Cohort == 5 & ID == "mB1" ~ "Slow",
+  Cohort == 5 & ID == "mB3" ~ "Slow",
+  Cohort == 6 & ID == "mE3" ~ "Fast",
+  Cohort == 6 & ID == "mC1" ~ "Fast",
+TRUE ~ "Normal"
+))
+
+write_csv(dat_all, "~/DataForRayman/dat_all.csv")
+
+
+dat_normal<-subset(dat_all, Type == "Normal")
+
+write_csv(dat_normal, "~/DataForRayman/dat_normal.csv")
+```
+
+```{r subsetting some of the data for analysis }
+
+conditions_of_interest_5<- dat_all %>% filter(
+  Cohort == 5 & (
+  (Phase == "Precond" & Event == "Center") | 
+  (Phase == "Cond" & Event == "Center") | 
+    (Phase == "Test" & (Event == "Left" | Event == "Right"))
+  ))
+
+conditions_of_interest_6<- dat_all %>% filter(
+  Cohort == 6 & (
+  (Phase == "Precond" & Event == "Center") | 
+  (Phase == "Cond" & Event == "Center") | 
+    (Phase == "Test" & (Event == "Left" | Event == "Right"))
+  ))
+
+conditions_of_interest_ALL<- dat_all %>% filter(
+  (Phase == "Precond" & Event == "Center") | 
+  (Phase == "Cond" & Event == "Center") | 
+    (Phase == "Test" & (Event == "Left" | Event == "Right")))
+```
+
+```{r brms Summary Table}
+brms_SummaryTable <- function(model,
+                              formatOptions=list(digits=2, nsmall=2),
+                              round=2,
+                              astrology=FALSE,
+                              hype=FALSE,
+                              panderize=FALSE,
+                              justify=NULL,
+                              seed = 1234,
+                              ...) {
+  if (!requireNamespace("brms", quietly = TRUE)) {
+    stop("brms package, along with related dependencies, is needed for this function to work. Please install it.",
+         call. = FALSE)
+  }
+
+  if (!inherits(model, "brmsfit")) stop('Model is not a brmsfit class object.')
+
+  fe = brms::fixef(model)
+  partables_formatted = data.frame(Covariate=rownames(fe),
+                                   do.call(format, list(x=round(fe, round), unlist(formatOptions))))
+  rownames(partables_formatted) = NULL
+  colnames(partables_formatted)[4:5] = c('l-95% CI', 'u-95% CI')
+
+  if(!astrology & !hype & !panderize) {
+    return(partables_formatted)
+  }
+
+  # conduct hypothesis tests
+  if (hype) {
+    testnams = mapply(function(coefname, sign)
+      ifelse(sign>0, paste0(coefname, ' > 0'), paste0(coefname, ' < 0')), rownames(fe), sign(fe[,'Estimate']))
+    hypetests = brms::hypothesis(x=model, testnams, seed=seed)
+    ER = hypetests$hypothesis$Evid.Ratio
+    partables_formatted$pvals = ER/(ER+1)
+    partables_formatted$pvals[is.infinite(ER)] = 1
+    partables_formatted$pvals = do.call(format, list(x=round(partables_formatted$pvals, round), formatOptions[[1]]))
+    colnames(partables_formatted)[ncol(partables_formatted)] = 'B < > 0'
+    partables_formatted[,'Evidence Ratio'] = do.call(format, list(x=round(ER, round), formatOptions[[1]]))
+  }
+
+  # if hype, make star based on brms result, else interval
+  if (astrology && hype)  {
+    partables_formatted$Notable = hypetests$hypothesis$Star
+  } else if (astrology) {
+    partables_formatted$Notable =  apply(sign(fe[,c('Q2.5', 'Q97.5')]),
+                                         1,
+                                         function(interval) ifelse(diff(interval)==0, '*', ''))
+  }
+
+  if (panderize) {
+    if (is.null(justify)) {
+      if (astrology) {
+        justify = paste0('l', paste0(rep('r', ncol(partables_formatted)-2), collapse = ''), 'c')
+      } else {
+        justify = paste0('l', paste0(rep('r', ncol(partables_formatted)-1), collapse = ''))
+      }
+    }
+    return(pander::pander(x=partables_formatted, justify=justify, split.tables=Inf))
+  }
+
+  partables_formatted
+}
+```
+
+```{r defining a plotting theme, include = FALSE}
+theme_ray<- theme(axis.line.x.bottom=element_line(color="grey20"),                        
+                   axis.line.y.left =element_line(color="grey20"),                         
+                   panel.background = element_blank(), 
+                  plot.title = element_text(size=16,face="bold"),
+                  plot.subtitle = element_text(size=13,face="bold"),
+                   axis.title.y = element_text(size=13,face="bold"),                        
+                   axis.title.x = element_text(size=13,face="bold"),                         
+                   axis.text = element_text(size=13 ,face="bold"))
+```
+
+# Stats
+
+# Pre-exposure
+
+### Virus 
+
+```{r BRMS-PRE-VIRUS-TIME, eval = FALSE}
+BRMS_PRE_C5_TIME_VIRUS<- brm(data = 
+                                subset(dat_all, Cohort == 5 & 
+                      Phase == "Precond" & Event == "Center"),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_PRE_C5_TIME_VIRUS, "BRMS_PRE_C5_TIME_VIRUS.Rds")
+
+BRMS_PRE_C6_TIME_VIRUS<- brm(data = subset(dat_all, Cohort == 6 & 
+                      Phase == "Precond" & Event == "Center"),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_PRE_C6_TIME_VIRUS, "BRMS_PRE_C6_TIME_VIRUS.Rds")
+
+
+## NORMAL XOUTLIERS 
+BRMS_PRE_C5_TIME_VIRUS_XOUTLIERS<- brm(data = 
+                                subset(dat_normal, Cohort == 5 & 
+                      Phase == "Precond" & Event == "Center"),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_PRE_C5_TIME_VIRUS_XOUTLIERS, "BRMS_PRE_C5_TIME_VIRUS_XOUTLIERS.Rds")
+
+BRMS_PRE_C6_TIME_VIRUS_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 6 & 
+                                     Phase == "Precond" & 
+                      Phase == "Precond" & Event == "Center"),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_PRE_C6_TIME_VIRUS_XOUTLIERS, "BRMS_PRE_C6_TIME_VIRUS_XOUTLIERS.Rds")
+
+```
+
+
+
+### ID
+
+First, I will analyse if the average central poke times, per mouse ID averaged across all 8 sessions.
+
+#### Time
+
+```{r PRE BRMS Any Differences In Mouse Poking Time by ID, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_precon_TIME_ID <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_precon_TIME_ID, "BRMS_C5_precon_TIME_ID.Rds")
+
+BRMS_C6_precon_TIME_ID <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_precon_TIME_ID, "BRMS_C6_precon_TIME_ID.Rds")
+
+
+
+BRMS_ALL_precon_TIME_ID <- brm(formula = Total_Time_s ~  ID_c, 
+                               data = subset(dat_all, Phase == "Precond" & Event == "Center"), family = gaussian())
+
+saveRDS(BRMS_ALL_precon_TIME_ID, "BRMS_ALL_precon_TIME_ID.Rds")
+
+# includes prior in the object for plots later on
+#  path = "Pre_C_TIME_ID")
+
+
+```
+
+#### Pokes
+
+```{r PRE BRMS Any Differences In Mouse Poking Pokes by ID, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_precon_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_precon_Pokes_ID, "BRMS_C5_precon_Pokes_ID.Rds")
+
+BRMS_C6_precon_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_precon_Pokes_ID, "BRMS_C6_precon_Pokes_ID.Rds")
+
+
+
+BRMS_ALL_precon_Pokes_ID <- brm(formula = n_Pokes ~  ID_c, 
+                               data = subset(dat_all, Phase == "Precond" & Event == "Center"), family = gaussian())
+
+saveRDS(BRMS_ALL_precon_Pokes_ID, "BRMS_ALL_precon_Pokes_ID.Rds")
+
+# includes prior in the object for plots later on
+#  path = "Pre_C_Pokes_ID")
+
+
+```
+
+
+
+#### Normal Mice
+
+```{r PRE BRMS Any Differences In Mouse Poking Time by ID NORMAL MICE, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_precon_TIME_ID_NORMAL <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_precon_TIME_ID_NORMAL, "BRMS_C5_precon_TIME_ID_NORMAL.Rds")
+
+BRMS_C6_precon_TIME_ID_NORMAL <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_precon_TIME_ID_NORMAL, "BRMS_C6_precon_TIME_ID_NORMAL.Rds")
+
+
+
+
+```
+
+```{r PRE BRMS Any Differences In Mouse Poking Pokes by ID NORMAL MICE, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_precon_Pokes_ID_NORMAL <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_precon_Pokes_ID_NORMAL, "BRMS_C5_precon_Pokes_ID_NORMAL.Rds")
+
+BRMS_C6_precon_Pokes_ID_NORMAL <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Precond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_precon_Pokes_ID_NORMAL, "BRMS_C6_precon_Pokes_ID_NORMAL.Rds")
+
+
+
+
+```
+
+
+### Session
+
+I will also test the average central poke times to assess if there is any overall differences across all the sessions.
+
+#### Time
+
+```{r PRE-BRMS-Any-Differences-In-Mouse-Poking-Time-between-Sessions, out.width="75%", fig.align='center', eval = FALSE }
+
+BRMS_C5_precon_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond" & 
+                  Cohort == 5), 
+                  family = gaussian)
+
+saveRDS(BRMS_C5_precon_TIME_SESSION, "BRMS_C5_precon_TIME_SESSION.Rds")
+
+BRMS_C6_precon_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond" & 
+                  Cohort == 6), 
+                  family = gaussian)
+
+saveRDS(BRMS_C6_precon_TIME_SESSION ,"BRMS_C6_precon_TIME_SESSION.Rds")
+
+BRMS_ALL_precon_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond"), 
+                  family = gaussian)
+
+saveRDS(BRMS_ALL_precon_TIME_SESSION ,"BRMS_ALL_precon_TIME_SESSION.Rds")
+
+
+
+```
+#### Pokes
+
+```{r PRE-BRMS-Any-Differences-In-Mouse-Poking-COUNT-between-Sessions, out.width="75%", fig.align='center', eval = FALSE }
+
+BRMS_C5_precon_POKES_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond" & 
+                  Cohort == 5), 
+                  family = gaussian)
+
+saveRDS(BRMS_C5_precon_POKES_SESSION, "BRMS_C5_precon_POKES_SESSION.Rds")
+
+BRMS_C6_precon_POKES_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond" & 
+                  Cohort == 6), 
+                  family = gaussian)
+
+saveRDS(BRMS_C6_precon_POKES_SESSION ,"BRMS_C6_precon_POKES_SESSION.Rds")
+
+BRMS_ALL_precon_POKES_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Precond"), 
+                  family = gaussian)
+
+saveRDS(BRMS_ALL_precon_POKES_SESSION ,"BRMS_ALL_precon_POKES_SESSION.Rds")
+
+
+
+```
+
+
+### Condition
+
+The flavor combination in the central port alternates between 'A'+'X' and 'B'+'Y' every day, such that each mouse experiences both combinations. So I will examine to see if any reasonable different is apparent.
+
+#### Time
+
+```{r PRE BRMS Total_Time_s vs. Condition, eval = FALSE}
+set.seed(420) 
+
+## EVeryone 
+BRMS_Precon_C5_Time_Condition <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C5_Time_Condition,"Precon_C5_Time_Condition.Rds")
+                                 
+BRMS_C6_Precon_VIRUS_CONDITION_TIME <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_TIME,"C6_Precon_VIRUS_CONDITION_TIME.Rds")
+                                 
+BRMS_ALL_Precon_VIRUS_CONDITION_TIME <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" &
+                                               
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_ALL_Precon_VIRUS_CONDITION_TIME,"ALL_Precon_VIRUS_CONDITION_TIME.Rds")
+                                 
+                                 ## Outliers 
+                                 
+BRMS_Precon_C5_Time_Condition_OUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C5_Time_Condition_OUTLIERS,"Precon_C5_Time_Condition_OUTLIERS.Rds")
+                                 
+BRMS_C6_Precon_VIRUS_CONDITION_TIME_OUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_TIME_OUTLIERS,"C6_Precon_VIRUS_CONDITION_TIME_OUTLIERS.Rds")
+                                 
+                                 BRMS_ALL_Precon_VIRUS_CONDITION_TIME_OUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                               
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_ALL_Precon_VIRUS_CONDITION_TIME_OUTLIERS,"ALL_Precon_VIRUS_CONDITION_TIME_OUTLIERS.Rds")
+
+```
+#### Pokes
+
+```{r PRE BRMS Total_Pokes_s vs. Condition, eval = FALSE}
+set.seed(420) 
+
+## EVeryone 
+BRMS_Precon_C5_Pokes_Condition <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C5_Pokes_Condition,"Precon_C5_Pokes_Condition.Rds")
+                                 
+BRMS_Precon_C6_Pokes_Condition <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C6_Pokes_Condition,"Precon_C6_Pokes_Condition.Rds")
+                                 
+                                 ## Outliers 
+                                 
+BRMS_Precon_C5_Pokes_Condition_OUTLIERS <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C5_Pokes_Condition_OUTLIERS,"Precon_C5_Pokes_Condition_OUTLIERS.Rds")
+                                 
+BRMS_Precon_C6_Pokes_Condition_OUTLIERS <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Precond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Precon_C5_Pokes_Condition_OUTLIERS,"Precon_C6_Pokes_Condition_OUTLIERS.Rds")
+
+```
+### Both Virus and Condition
+
+What about any differences between the mean poking time in the CENTER region when considering both virus and the condition?
+
+#### Time
+
+```{r PRE BRMS Total_Time_s vs. Virus and considering Condition, eval = FALSE}
+
+
+get_prior(Total_Time_s ~ Virus * Condition , data = subset(dat_all,
+                        Phase == "Precond" &
+                          Cohort == 5 &
+                        Event == "Center")) %>% kbl() %>% kable_classic_2()
+
+set.seed(420) #for reproducibility
+
+BRMS_C5_Precon_VIRUS_CONDITION_TIME <- brm(
+  formula = Total_Time_s ~ Virus * Condition ,
+                        data = subset(dat_all,
+                        Phase == "Precond" &
+                        Cohort == 5 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C5_Precon_VIRUS_CONDITION_TIME, "BRMS_C5_Precon_VIRUS_CONDITION_TIME.Rds")
+
+
+BRMS_C6_Precon_VIRUS_CONDITION_TIME <- brm(
+  formula = Total_Time_s ~ Virus * Condition ,
+                        data = subset(dat_all,
+                        Phase == "Precond" &
+                        Cohort == 6 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_TIME, "BRMS_C6_Precon_VIRUS_CONDITION_TIME.Rds")
+  
+  
+  ## Ex Outliers
+  
+  
+BRMS_C5_Precon_VIRUS_CONDITION_TIME_XOUTLIERS <- brm(
+  formula = Total_Time_s ~ Virus * Condition ,
+                        data = subset(dat_normal,
+                        Phase == "Precond" &
+                        Cohort == 5 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C5_Precon_VIRUS_CONDITION_TIME_XOUTLIERS, "BRMS_C5_Precon_VIRUS_CONDITION_TIME_XOUTLIERS.Rds")
+
+
+BRMS_C6_Precon_VIRUS_CONDITION_TIME_XOUTLIERS <- brm(
+  formula = Total_Time_s ~ Virus * Condition ,
+                        data = subset(dat_normal,
+                        Phase == "Precond" &
+                        Cohort == 6 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_TIME_XOUTLIERS, "BRMS_C6_Precon_VIRUS_CONDITION_TIME_XOUTLIERS.Rds")
+```
+#### Pokes
+
+```{r PRE BRMS Total_Pokes_s vs. Virus and considering Condition, eval = FALSE}
+
+
+get_prior(n_Pokes ~ Virus * Condition , data = subset(dat_all,
+                        Phase == "Precond" &
+                          Cohort == 5 &
+                        Event == "Center")) %>% kbl() %>% kable_classic_2()
+
+set.seed(420) #for reproducibility
+
+BRMS_C5_Precon_VIRUS_CONDITION_Pokes <- brm(
+  formula = n_Pokes ~ Virus * Condition ,
+                        data = subset(dat_all,
+                        Phase == "Precond" &
+                        Cohort == 5 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C5_Precon_VIRUS_CONDITION_Pokes, "BRMS_C5_Precon_VIRUS_CONDITION_Pokes.Rds")
+
+
+BRMS_C6_Precon_VIRUS_CONDITION_Pokes <- brm(
+  formula = n_Pokes ~ Virus * Condition ,
+                        data = subset(dat_all,
+                        Phase == "Precond" &
+                        Cohort == 6 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_Pokes, "BRMS_C6_Precon_VIRUS_CONDITION_Pokes.Rds")
+  
+  
+  ## Ex Outliers
+  
+  
+BRMS_C5_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS <- brm(
+  formula = n_Pokes ~ Virus * Condition ,
+                        data = subset(dat_normal,
+                        Phase == "Precond" &
+                        Cohort == 5 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C5_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS, "BRMS_C5_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS.Rds")
+
+
+BRMS_C6_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS <- brm(
+  formula = n_Pokes ~ Virus * Condition ,
+                        data = subset(dat_normal,
+                        Phase == "Precond" &
+                        Cohort == 6 &
+                        Event == "Center"),
+  family = gaussian())
+  saveRDS(BRMS_C6_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS, "BRMS_C6_Precon_VIRUS_CONDITION_Pokes_XOUTLIERS.Rds")
+```
+### All Events (LEFT/RIGHT/CENTER)
+
+Finally, given that were initially only concerned with the mice poking in the central region. Given that the right and the left ports did not deliver any water rewards and the mice were water deprived for 12 hours. Still, it may be useful just to confirm that there is a meaningful difference in center poking time compared to the right and the left.
+
+#### Time
+
+```{r PRIOR PRE BRMS-Total_Time_s-vs-Event-Right, Left, or Center}
+# Get prior 
+
+get_prior(Total_Time_s ~ Event, 
+  data = subset(dat_all, Cohort ==5 & Phase == "Precond")
+  ) %>% kbl() %>% kable_classic_2()
+
+set.seed(420)
+```
+
+#### Pokes
+
+```{r PRE BRMS-Total_Time_s-vs-Event-Right, Left, or Center, eval = FALSE}
+
+BRMS_C5_Precon_POKES_EVENT<- 
+  brm(
+  n_Pokes ~ Event, 
+  data = subset(dat_all, Cohort ==5 & Phase == "Precond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Precon_POKES_EVENT, "BRMS_C5_Precon_POKES_EVENT.Rds")
+
+
+BRMS_C6_Precon_POKES_EVENT<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_all, Cohort ==6 & Phase == "Precond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Precon_POKES_EVENT, "BRMS_C6_Precon_POKES_EVENT.Rds")
+
+## Outliers 
+BRMS_C5_Precon_POKES_EVENT_XOUTLIERS<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_normal, Cohort ==5 & Phase == "Precond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Precon_POKES_EVENT_XOUTLIERS, "BRMS_C5_Precon_POKES_EVENT_XOUTLIERS.Rds")
+
+
+BRMS_C6_Precon_POKES_EVENT_XOUTLIERS<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_normal, Cohort ==6 & Phase == "Precond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Precon_POKES_EVENT_XOUTLIERS, "BRMS_C6_Precon_POKES_EVENT_XOUTLIERS.Rds")
+
+```
+
+# Conditioing
+
+### Time vs. ID
+
+First, I will analyse if the average central poke times, per mouse ID averaged across all 8 sessions.
+
+## ID
+
+#### Time
+
+```{r PRIORS COND BRMS Any Differences In Mouse Poking Time by ID}
+get_prior(Total_Time_s ~ ID_c, 
+                        data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 5)
+) %>% kbl() %>% kable_classic_2()
+
+get_prior(Total_Time_s ~ ID, 
+                        data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 6)
+) %>% kbl() %>% kable_classic_2()
+
+get_prior(Total_Time_s ~ ID, 
+                        data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center")) %>% kbl() %>% kable_classic_2()
+
+
+
+```
+
+#### Pokes
+
+```{r COND BRMS Any Differences In Mouse Poking Pokes by ID, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_Cond_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_Pokes_ID, "BRMS_C5_Cond_Pokes_ID.Rds")
+
+BRMS_C6_Cond_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_Pokes_ID, "BRMS_C6_Cond_Pokes_ID.Rds")
+
+
+
+BRMS_ALL_Cond_Pokes_ID <- brm(formula = n_Pokes ~  ID_c, 
+                               data = subset(dat_all, Phase == "Cond" & Event == "Center"), family = gaussian())
+
+saveRDS(BRMS_ALL_Cond_Pokes_ID, "BRMS_ALL_Cond_Pokes_ID.Rds")
+
+# includes prior in the object for plots later on
+#  path = "COND_C_Pokes_ID")
+
+
+## Outliers 
+
+BRMS_C5_Cond_Pokes_ID_XOUTLIERS <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_Pokes_ID_XOUTLIERS, "BRMS_C5_Cond_Pokes_ID_XOUTLIERS.Rds")
+
+BRMS_C6_Cond_Pokes_ID_XOUTLIERS <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Cond" & 
+                        Event == "Center" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_Pokes_ID_XOUTLIERS, "BRMS_C6_Cond_Pokes_ID_XOUTLIERS.Rds")
+```
+
+
+## Virus
+
+#### Time
+
+```{r PLOT-BRMS-Cond-VIRUS-TIME, fig.width = 3.5, fig.height = 2, message = F, warning = F}
+
+BRMS_C5_Cond_VIRUS_TIME<- read_rds("~/DataForRayman/BRMS_C5_Cond_VIRUS_TIME.Rds")
+
+nd <- tibble(eYFP = c(1, 0),
+             Virus   = c("5-CamK2-eYFP", "9-CamK2-Jaws-GFP"))
+
+p_C5_Cond_VIRUS_TIME<- fitted(BRMS_C5_Cond_VIRUS_TIME,
+       newdata = nd,
+       summary = F) %>% 
+  as_tibble() %>% 
+  gather() %>% 
+  mutate(Virus = rep(c("eYFP", "JAWS"), 
+                       each = n() / 2)) %>% 
+  ggplot(aes(x = value, y = reorder(Virus, value))) +
+  geom_halfeyeh(fill = "firebrick4", 
+                point_interval = median_qi, .width = .95) +
+  labs(title = "Conditioning by Virus", subtitle = "Cohort 5",
+    x = "Time (s)",
+       y = NULL) +
+  theme_bw() + theme_ray + 
+  theme(panel.grid   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_text(hjust = 0)) 
+
+ggsave("C5_Cond_VIRUS_TIME.png")
+
+BRMS_C6_Cond_VIRUS_TIME<- read_rds("~/DataForRayman/BRMS_C6_Cond_VIRUS_TIME.Rds")
+
+nd <- tibble(eYFP = c(1, 0),
+             Virus   = c("5-CamK2-eYFP", "9-CamK2-Jaws-GFP"))
+
+p_C6_Cond_VIRUS_TIME<- fitted(BRMS_C6_Cond_VIRUS_TIME,
+       newdata = nd,
+       summary = F) %>% 
+  as_tibble() %>% 
+  gather() %>% 
+  mutate(Virus = rep(c("eYFP", "JAWS"), 
+                       each = n() / 2)) %>% 
+  ggplot(aes(x = value, y = reorder(Virus, value))) +
+  geom_halfeyeh(fill = "royalblue", 
+                point_interval = median_qi, .width = .95) +
+  labs(title = "Conditioning by Virus", subtitle = "Cohort 6",
+    x = "Time (s)",
+       y = NULL) +
+  theme_bw() + theme_ray + 
+  theme(panel.grid   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_text(hjust = 0)) 
+
+ggsave("C6_Cond_VIRUS_TIME.png")
+
+BRMS_C5_Cond_VIRUS_TIME %>% brms_SummaryTable() %>% kbl(caption = "Cohort 5") %>% kable_classic( full_width = FALSE)
+
+BRMS_C6_Cond_VIRUS_TIME%>% brms_SummaryTable() %>% kbl(caption = "Cohort 6") %>% kable_classic( full_width = FALSE)
+
+plot_grid(p_C5_Cond_VIRUS_TIME, p_C6_Cond_VIRUS_TIME)
+ggsave("C5_C6_Cond_VIRUS_TIME.png")
+```
+
+#### Pokes
+
+```{r PLOT-BRMS-Cond-VIRUS-Pokes, fig.width = 2, fig.height = 2, message = F, warning = F}
+
+BRMS_C5_Cond_VIRUS_Pokes<- read_rds("~/DataForRayman/BRMS_C5_Cond_VIRUS_Pokes.Rds")
+
+nd <- tibble(eYFP = c(1, 0),
+             Virus   = c("5-CamK2-eYFP", "9-CamK2-Jaws-GFP"))
+
+p_C5_Cond_VIRUS_Pokes<- fitted(BRMS_C5_Cond_VIRUS_Pokes,
+       newdata = nd,
+       summary = F) %>% 
+  as_tibble() %>% 
+  gather() %>% 
+  mutate(Virus = rep(c("eYFP", "JAWS"), 
+                       each = n() / 2)) %>% 
+  ggplot(aes(x = value, y = reorder(Virus, value))) +
+  geom_halfeyeh(fill = "firebrick4", 
+                point_interval = median_qi, .width = .95) +
+  labs(title = "Conditioning by Virus", subtitle = "Cohort 5",
+    x = "Total Pokes",
+       y = NULL) +
+  theme_bw() + theme_ray + 
+  theme(panel.grid   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_text(hjust = 0)) 
+
+ggsave("C5_COND_POKES_VIRUS.png")
+
+BRMS_C6_Cond_VIRUS_Pokes<- read_rds("~/DataForRayman/BRMS_C6_Cond_VIRUS_Pokes.Rds")
+
+nd <- tibble(eYFP = c(1, 0),
+             Virus   = c("5-CamK2-eYFP", "9-CamK2-Jaws-GFP"))
+
+p_C6_Cond_VIRUS_Pokes<-fitted(BRMS_C5_Cond_VIRUS_Pokes,
+       newdata = nd,
+       summary = F) %>% 
+  as_tibble() %>% 
+  gather() %>% 
+  mutate(Virus = rep(c("eYFP", "JAWS"), 
+                       each = n() / 2)) %>% 
+  ggplot(aes(x = value, y = reorder(Virus, value))) +
+  geom_halfeyeh(fill = "royalblue", 
+                point_interval = median_qi, .width = .95) +
+  labs(title = "Conditioning by Virus", subtitle = "Cohort 6",
+    x = "Total Pokes",
+       y = NULL) +
+  theme_bw() +theme_ray + 
+  theme(panel.grid   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_text(hjust = 0)) 
+
+ggsave("C6_COND_POKES_VIRUS.png")
+
+plot_grid(p_C5_Cond_VIRUS_Pokes, p_C6_Cond_VIRUS_Pokes)
+ggsave("C5_C6_COND_POKES_VIRUS.png")
+
+
+post <- posterior_samples(BRMS_C5_Cond_VIRUS_Pokes)
+
+post_1<-post %>% 
+  transmute(eYFP  = b_Intercept, 
+            JAWS = b_Intercept + b_Virus9MCamK2MJawsMGFP) %>%
+  gather() %>% mutate(Cohort = "Cohort 5")
+
+
+
+post <- posterior_samples(BRMS_C6_Cond_VIRUS_Pokes)
+post_2<-post %>% 
+  transmute(eYFP  = b_Intercept, 
+            JAWS = b_Intercept + b_Virus9MCamK2MJawsMGFP) %>%
+  gather() %>% mutate(Cohort = "Cohort 6")
+
+c5_c6<- bind_rows(post_1,post_2)
+
+
+
+c5_c6 %>%   ggplot(aes(x = value, y = key, fill = Cohort)) +  # note how we used `reorder()` to arrange the coefficients
+  scale_fill_manual(values = c("firebrick4", "royalblue"))+
+ geom_halfeyeh(alpha = 0.7,
+                point_interval = median_qi, .width = .96) +
+  labs(title = "Conditioning", subtitle = "Between Viruses",
+    x = "Total Pokes",
+       y = NULL) +
+  theme_bw() + theme_ray+
+
+  theme(panel.grid   = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y  = element_text(hjust = 0)) 
+
+ggsave("COND_BOTH_VIRUS_POKES.png")
+
+
+
+```
+
+
+## Session
+
+#### Time
+
+```{r COND-BRMS-Any-Differences-In-Mouse-Poking-Time-between-Sessions, out.width="75%", fig.align='center', eval = FALSE }
+
+BRMS_C5_Cond_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond" & 
+                  Cohort == 5), 
+                  family = gaussian)
+
+saveRDS(BRMS_C5_Cond_TIME_SESSION, "BRMS_C5_Cond_TIME_SESSION.Rds")
+
+BRMS_C6_Cond_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond" & 
+                  Cohort == 6), 
+                  family = gaussian)
+
+saveRDS(BRMS_C6_Cond_TIME_SESSION ,"BRMS_C6_Cond_TIME_SESSION.Rds")
+
+BRMS_ALL_Cond_TIME_SESSION<- brm(
+  formula = Total_Time_s ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond"), 
+                  family = gaussian)
+
+saveRDS(BRMS_ALL_Cond_TIME_SESSION ,"BRMS_ALL_Cond_TIME_SESSION.Rds")
+
+
+
+```
+
+
+#### Pokes
+
+```{r COND-BRMS-Any-Differences-In-Mouse-Poking-Pokes-between-Sessions, out.width="75%", fig.align='center', eval = FALSE }
+
+BRMS_C5_Cond_Pokes_SESSION<- brm(
+  formula = n_Pokes ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond" & 
+                  Cohort == 5), 
+                  family = gaussian)
+
+saveRDS(BRMS_C5_Cond_Pokes_SESSION, "BRMS_C5_Cond_Pokes_SESSION.Rds")
+
+BRMS_C6_Cond_Pokes_SESSION<- brm(
+  formula = n_Pokes ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond" & 
+                  Cohort == 6), 
+                  family = gaussian)
+
+saveRDS(BRMS_C6_Cond_Pokes_SESSION ,"BRMS_C6_Cond_Pokes_SESSION.Rds")
+
+BRMS_ALL_Cond_Pokes_SESSION<- brm(
+  formula = n_Pokes ~ Session, 
+  data = subset(dat_all,
+                  Event == "Center" & 
+                  Phase == "Cond"), 
+                  family = gaussian)
+
+saveRDS(BRMS_ALL_Cond_Pokes_SESSION ,"BRMS_ALL_Cond_Pokes_SESSION.Rds")
+
+
+
+```
+
+
+## Condition
+
+The flavor combination in the central port alternates between 'A'+'X' and 'B'+'Y' every day, such that each mouse experiences both combinations. So I will examine to see if any reasonable different is apparent.
+
+#### Time
+
+```{r COND BRMS Total_Time_s vs. Condition, eval = FALSE}
+set.seed(420) #for reproducibility
+
+BRMS_C5_Cond_TIME_CONDITION <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_TIME_CONDITION, "BRMS_C5_Cond_TIME_CONDITION.Rds")
+
+BRMS_C6_Cond_TIME_CONDITION <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_TIME_CONDITION, "BRMS_C6_Cond_TIME_CONDITION.Rds")
+
+                                ## Outliers 
+                                 
+BRMS_Cond_C5_Time_Condition_OUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Cond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Cond_C5_Time_Condition_OUTLIERS,"BRMS_Cond_C5_Time_Condition_OUTLIERS.Rds")
+                                 
+BRMS_Cond_C6_Time_Condition_OUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Cond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Cond_C6_Time_Condition_OUTLIERS,"BRMS_Cond_C6_Time_Condition_OUTLIERS.Rds")
+
+```
+
+
+#### Pokes
+
+```{r COND BRMS Total_Pokes_s vs. Condition, eval = FALSE}
+set.seed(420) #for reproducibility
+
+BRMS_C5_Cond_Pokes_CONDITION <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Pokes_CONDITION, "BRMS_C5_Cond_Pokes_CONDITION.Rds")
+
+BRMS_C6_Cond_Pokes_CONDITION <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Pokes_CONDITION, "BRMS_C6_Cond_Pokes_CONDITION.Rds")
+
+                                ## Outliers 
+                                 
+BRMS_Cond_C5_Pokes_Condition_OUTLIERS <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort ==5 &
+                                               Phase == "Cond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Cond_C5_Pokes_Condition_OUTLIERS,"BRMS_Cond_C5_Pokes_Condition_OUTLIERS.Rds")
+                                 
+BRMS_Cond_C6_Pokes_Condition_OUTLIERS <- brm(
+                                 formula = n_Pokes ~ Condition,
+                                 data = subset(dat_normal,
+                                               Event == "Center" &
+                                                 Cohort == 6 &
+                                               Phase == "Cond"), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_Cond_C6_Pokes_Condition_OUTLIERS,"BRMS_Cond_C6_Pokes_Condition_OUTLIERS.Rds")
+
+```
+
+
+## Condition and Session
+
+#### Time
+
+```{r COND BRMS Time and Condition and Session, eval = FALSE }
+set.seed(420) #for reproducibility
+
+
+BRMS_C5_Cond_Time_CONDITION_SESSION <- brm(
+                                 formula = Total_Time_s ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Time_CONDITION_SESSION, "BRMS_C5_Cond_Time_CONDITION_SESSION.Rds")
+
+BRMS_C6_Cond_Time_CONDITION_SESSION <- brm(
+                                 formula = Total_Time_s ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Time_CONDITION_SESSION, "BRMS_C6_Cond_Time_CONDITION_SESSION.Rds")
+
+#NORMAL
+
+BRMS_C5_Cond_Time_CONDITION_SESSION_XOUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Time_CONDITION_SESSION_XOUTLIERS, "BRMS_C5_Cond_Time_CONDITION_SESSION_XOUTLIERS.Rds")
+
+BRMS_C6_Cond_Time_CONDITION_SESSION_XOUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Time_CONDITION_SESSION_XOUTLIERS, "BRMS_C6_Cond_Time_CONDITION_SESSION_XOUTLIERS.Rds")
+
+
+```
+
+
+#### Pokes
+
+```{r COND BRMS Pokes and Condition and Session, eval = FALSE}
+set.seed(420) #for reproducibility
+
+
+BRMS_C5_Cond_Pokes_CONDITION_SESSION <- brm(
+                                 formula = n_Pokes ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Pokes_CONDITION_SESSION, "BRMS_C5_Cond_Pokes_CONDITION_SESSION.Rds")
+
+BRMS_C6_Cond_Pokes_CONDITION_SESSION <- brm(
+                                 formula = n_Pokes ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Pokes_CONDITION_SESSION, "BRMS_C6_Cond_Pokes_CONDITION_SESSION.Rds")
+
+BRMS_C5_Cond_Pokes_CONDITION_SESSION_XOUTLIERS <- brm(
+                                 formula = n_Pokes ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_normal,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Pokes_CONDITION_SESSION_XOUTLIERS, "BRMS_C5_Cond_Pokes_CONDITION_SESSION_XOUTLIERS.Rds")
+
+BRMS_C6_Cond_Pokes_CONDITION_SESSION_XOUTLIERS <- brm(
+                    formula = n_Pokes ~ Condition + Session + Condition:Session,
+                                 data = subset(dat_normal,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Pokes_CONDITION_SESSION, "BRMS_C6_Cond_Pokes_CONDITION_SESSION_XOUTLIERS.Rds")
+
+
+```
+
+
+## Condition and Virus
+
+#### Time 
+
+```{r COND BRMS TIME and Condition and Virus, eval = FALSE}
+set.seed(420) #for reproducibility
+
+
+BRMS_C5_Cond_TIME_CONDITION_Virus <- brm(
+                                 formula = Total_Time_s ~ Condition + Virus + Condition:Virus,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_TIME_CONDITION_Virus, "BRMS_C5_Cond_TIME_CONDITION_Virus.Rds")
+
+BRMS_C6_Cond_TIME_CONDITION_Virus <- brm(
+                                 formula = Total_Time_s ~ Condition + Virus + Condition:Virus,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_TIME_CONDITION_Virus, "BRMS_C6_Cond_TIME_CONDITION_Virus.Rds")
+```
+
+
+#### Pokes
+
+```{r COND BRMS Pokes and Condition and Virus, eval = FALSE}
+set.seed(420) #for reproducibility
+
+
+BRMS_C5_Cond_Pokes_CONDITION_Virus <- brm(
+                                 formula = n_Pokes ~ Condition + Virus + Condition:Virus,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_Cond_Pokes_CONDITION_Virus, "BRMS_C5_Cond_Pokes_CONDITION_Virus.Rds")
+
+BRMS_C6_Cond_Pokes_CONDITION_Virus <- brm(
+                                 formula = n_Pokes ~ Condition + Virus + Condition:Virus,
+                                 data = subset(dat_all,
+                                               Event == "Center" & 
+                                               Phase == "Cond" & 
+                                                 Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_Cond_Pokes_CONDITION_Virus, "BRMS_C6_Cond_Pokes_CONDITION_Virus.Rds")
+```
+
+
+
+## Between Viruses
+
+Is there any difference between poking times in the Conditioning phase between the two types of Virus? I will do the same as above, but this time analyse the Virus against the time
+
+#### Time
+
+
+
+```{r COND BRMS Total_Time_s vs. Virus, eval = FALSE}
+
+
+BRMS_C5_Cond_VIRUS_TIME <- brm(
+  formula = Total_Time_s ~  Virus, 
+  data = subset(dat_all,Event == "Center" & Phase == "Cond" & Cohort == 5),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_VIRUS_TIME, "BRMS_C5_Cond_VIRUS_TIME.Rds")
+
+
+BRMS_C6_Cond_VIRUS_TIME <- brm(
+  formula = Total_Time_s ~  Virus, 
+  data = subset(dat_all,Event == "Center" & Phase == "Cond" & Cohort == 6),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_VIRUS_TIME, "BRMS_C6_Cond_VIRUS_TIME.Rds")
+
+# Outliers 
+
+BRMS_C5_Cond_VIRUS_TIME_XOUTLIERS <- brm(
+  formula = Total_Time_s ~  Virus, 
+  data = subset(dat_normal, Event == "Center" & Phase == "Cond" & Cohort == 5),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_VIRUS_TIME_XOUTLIERS, "BRMS_C5_Cond_VIRUS_TIME_XOUTLIERS.Rds")
+
+
+BRMS_C6_Cond_VIRUS_TIME_XOUTLIERS <- brm(
+  formula = Total_Time_s ~  Virus, 
+  data = subset(dat_normal,Event == "Center" & Phase == "Cond" & Cohort == 6),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_VIRUS_TIME_XOUTLIERS, "BRMS_C6_Cond_VIRUS_TIME_XOUTLIERS.Rds")
+
+
+
+```
+
+#### Pokes
+
+
+```{r COND BRMS Total_Pokes_s vs. Virus, eval = FALSE}
+
+BRMS_C5_Cond_VIRUS_Pokes <- brm(
+  formula = n_Pokes ~  Virus, 
+  data = subset(dat_all,Event == "Center" & Phase == "Cond" & Cohort == 5),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_VIRUS_Pokes, "BRMS_C5_Cond_VIRUS_Pokes.Rds")
+
+
+BRMS_C6_Cond_VIRUS_Pokes <- brm(
+  formula = n_Pokes ~  Virus, 
+  data = subset(dat_all,Event == "Center" & Phase == "Cond" & Cohort == 6),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_VIRUS_Pokes, "BRMS_C6_Cond_VIRUS_Pokes.Rds")
+
+# Outliers 
+
+BRMS_C5_Cond_VIRUS_Pokes_XOUTLIERS <- brm(
+  formula = n_Pokes ~  Virus, 
+  data = subset(dat_normal, Event == "Center" & Phase == "Cond" & Cohort == 5),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_VIRUS_Pokes_XOUTLIERS, "BRMS_C5_Cond_VIRUS_Pokes_XOUTLIERS.Rds")
+
+
+BRMS_C6_Cond_VIRUS_Pokes_XOUTLIERS <- brm(
+  formula = n_Pokes ~  Virus, 
+  data = subset(dat_normal,Event == "Center" & Phase == "Cond" & Cohort == 6),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_VIRUS_Pokes_XOUTLIERS, "BRMS_C6_Cond_VIRUS_Pokes_XOUTLIERS.Rds")
+
+
+
+```
+
+## All Events (Left/Right)
+
+#### Time
+
+
+```{r COND BRMS-Total_Time_s-vs-Event-Right Left or Center, eval = FALSE}
+
+BRMS_C5_Cond_TIME_EVENT<- 
+  brm(
+  Total_Time_s ~ Event, 
+  data = subset(dat_all, Cohort ==5 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_TIME_EVENT, "BRMS_C5_Cond_TIME_EVENT.Rds")
+
+
+BRMS_C6_Cond_TIME_EVENT<- 
+  brm(
+  Total_Time_s ~  Event, 
+  data = subset(dat_all, Cohort ==6 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_TIME_EVENT, "BRMS_C6_Cond_TIME_EVENT.Rds")
+
+## Outliers 
+BRMS_C5_Cond_TIME_EVENT_XOUTLIERS<- 
+  brm(
+  Total_Time_s ~  Event, 
+  data = subset(dat_normal, Cohort ==5 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_TIME_EVENT_XOUTLIERS, "BRMS_C5_Cond_TIME_EVENT_XOUTLIERS.Rds")
+
+
+BRMS_C6_Cond_TIME_EVENT_XOUTLIERS<- 
+  brm(
+  Total_Time_s ~  Event, 
+  data = subset(dat_normal, Cohort ==6 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_TIME_EVENT_XOUTLIERS, "BRMS_C6_Cond_TIME_EVENT_XOUTLIERS.Rds")
+
+```
+
+
+#### Pokes
+
+```{r Cond BRMS-Total_Time_s-vs-Event-Right, Left, or Center, eval = FALSE}
+
+BRMS_C5_Cond_POKES_EVENT<- 
+  brm(
+  n_Pokes ~ Event, 
+  data = subset(dat_all, Cohort ==5 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_POKES_EVENT, "BRMS_C5_Cond_POKES_EVENT.Rds")
+
+
+BRMS_C6_Cond_POKES_EVENT<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_all, Cohort ==6 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_POKES_EVENT, "BRMS_C6_Cond_POKES_EVENT.Rds")
+
+## Outliers 
+BRMS_C5_Cond_POKES_EVENT_XOUTLIERS<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_normal, Cohort ==5 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C5_Cond_POKES_EVENT_XOUTLIERS, "BRMS_C5_Cond_POKES_EVENT_XOUTLIERS.Rds")
+
+
+BRMS_C6_Cond_POKES_EVENT_XOUTLIERS<- 
+  brm(
+  n_Pokes ~  Event, 
+  data = subset(dat_normal, Cohort ==6 & Phase == "Cond"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_Cond_POKES_EVENT_XOUTLIERS, "BRMS_C6_Cond_POKES_EVENT_XOUTLIERS.Rds")
+
+```
+
+
+# Test
+
+## ID
+
+#### Time
+
+```{r Test BRMS Any Differences In Mouse Poking Time by ID, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_Test_TIME_ID <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Test" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Test_TIME_ID, "BRMS_C5_Test_TIME_ID.Rds")
+
+BRMS_C6_Test_TIME_ID <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Test" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Test_TIME_ID, "BRMS_C6_Test_TIME_ID.Rds")
+
+BRMS_ALL_Test_TIME_ID <- brm(formula = Total_Time_s ~  ID_c, 
+                               data = subset(dat_all, Phase == "Test" & Event == "Center"), family = gaussian())
+
+saveRDS(BRMS_ALL_Test_TIME_ID, "BRMS_ALL_Test_TIME_ID.Rds")
+
+
+## Outliers 
+
+BRMS_C5_Test_TIME_ID_XOUTLIERS <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Test" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Test_TIME_ID_XOUTLIERS, "BRMS_C5_Test_TIME_ID_XOUTLIERS.Rds")
+
+BRMS_C6_Test_TIME_ID_XOUTLIERS <- brm(
+  formula = Total_Time_s ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Test" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Test_TIME_ID_XOUTLIERS, "BRMS_C6_Test_TIME_ID_XOUTLIERS.Rds")
+
+```
+
+
+#### Pokes
+
+```{r Test BRMS Any Differences In Mouse Poking Pokes by ID, eval = FALSE}
+set.seed(420)
+
+BRMS_C5_Test_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Test" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Test_Pokes_ID, "BRMS_C5_Test_Pokes_ID.Rds")
+
+BRMS_C6_Test_Pokes_ID <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_all,
+                        Phase == "Test" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Test_Pokes_ID, "BRMS_C6_Test_Pokes_ID.Rds")
+
+BRMS_ALL_Test_Pokes_ID <- brm(formula = n_Pokes ~  ID_c, 
+                               data = subset(dat_all, Phase == "Test" & Event == "Center"), family = gaussian())
+
+saveRDS(BRMS_ALL_Test_Pokes_ID, "BRMS_ALL_Test_Pokes_ID.Rds")
+
+
+## Outliers 
+
+BRMS_C5_Test_Pokes_ID_XOUTLIERS <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Test" & 
+                        Cohort == 5), 
+  family = gaussian())
+
+saveRDS(BRMS_C5_Test_Pokes_ID_XOUTLIERS, "BRMS_C5_Test_Pokes_ID_XOUTLIERS.Rds")
+
+BRMS_C6_Test_Pokes_ID_XOUTLIERS <- brm(
+  formula = n_Pokes ~  ID, 
+  data = subset(dat_normal,
+                        Phase == "Test" & 
+                        Cohort == 6), 
+  family = gaussian())
+
+saveRDS(BRMS_C6_Test_Pokes_ID_XOUTLIERS, "BRMS_C6_Test_Pokes_ID_XOUTLIERS.Rds")
+
+```
+
+
+
+## Overall Virus
+
+#### Time
+
+```{r BRMS-TEST-VIRUS-TIME, eval = FALSE}
+BRMS_TEST_C5_TIME_VIRUS<- brm(data = 
+                                subset(dat_all, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_TEST_C5_TIME_VIRUS, "BRMS_TEST_C5_TIME_VIRUS.Rds")
+
+BRMS_TEST_C6_TIME_VIRUS<- brm(data = subset(dat_all, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_TEST_C6_TIME_VIRUS, "BRMS_TEST_C6_TIME_VIRUS.Rds")
+
+
+## NORMAL XOUTLIERS 
+BRMS_TEST_C5_TIME_VIRUS_XOUTLIERS<- brm(data = 
+                                subset(dat_normal, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_TEST_C5_TIME_VIRUS_XOUTLIERS, "BRMS_TEST_C5_TIME_VIRUS_XOUTLIERS.Rds")
+
+BRMS_TEST_C6_TIME_VIRUS_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus)
+
+saveRDS(BRMS_TEST_C6_TIME_VIRUS_XOUTLIERS, "BRMS_TEST_C6_TIME_VIRUS_XOUTLIERS.Rds")
+
+```
+
+
+#### Pokes
+
+```{r BRMS TEST VIRUS POKES, eval = FALSE}
+BRMS_TEST_C5_POKES_VIRUS<- brm(data = subset(dat_all, Cohort == 5 & 
+                                     Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus)
+
+saveRDS(BRMS_TEST_C5_POKES_VIRUS, "BRMS_TEST_C5_POKES_VIRUS.Rds")
+
+BRMS_TEST_C6_POKES_VIRUS<- brm(data = subset(dat_all, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus)
+
+saveRDS(BRMS_TEST_C6_POKES_VIRUS, "BRMS_TEST_C6_POKES_VIRUS.Rds")
+
+BRMS_TEST_ALL_POKES_VIRUS<- brm(data = subset(dat_all,
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus)
+
+saveRDS(BRMS_TEST_ALL_POKES_VIRUS, "BRMS_TEST_ALL_POKES_VIRUS.Rds")
+
+## NORMAL XOUTLIERS
+
+BRMS_TEST_C5_POKES_VIRUS_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 5 & 
+                                     Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus)
+
+saveRDS(BRMS_TEST_C5_POKES_VIRUS_XOUTLIERS, "BRMS_TEST_C5_POKES_VIRUS_XOUTLIERS.Rds")
+
+BRMS_TEST_C6_POKES_VIRUS_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus)
+
+saveRDS(BRMS_TEST_C6_POKES_VIRUS_XOUTLIERS, "BRMS_TEST_C6_POKES_VIRUS_XOUTLIERS.Rds")
+
+```
+
+
+## Virus and Event
+
+#### Time
+
+```{r BRMS TEST VIRUS TIME EVENT, eval = FALSE}
+BRMS_TEST_C5_TIME_VIRUS_EVENT<- brm(data = 
+                                subset(dat_all, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus + Event )
+
+saveRDS(BRMS_TEST_C5_TIME_VIRUS_EVENT, "BRMS_TEST_C5_TIME_VIRUS_EVENT.Rds")
+
+BRMS_TEST_C6_TIME_VIRUS_EVENT<- brm(data = subset(dat_all, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = Total_Time_s ~ Virus + Event )
+
+saveRDS(BRMS_TEST_C6_TIME_VIRUS_EVENT, "BRMS_TEST_C6_TIMEVIRUS_EVENT.Rds")
+
+
+## NORMAL XOUTLIERS 
+BRMS_TEST_C5_TIME_VIRUS_EVENT_XOUTLIERS<- brm(data = 
+                                subset(dat_normal, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            Total_Time_s ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C5_TIME_VIRUS_EVENT_XOUTLIERS, "BRMS_TEST_C5_TIME_VIRUS_EVENT_XOUTLIERS.Rds")
+
+BRMS_TEST_C6_TIME_VIRUS_EVENT_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            Total_Time_s ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C6_TIME_VIRUS_EVENT_XOUTLIERS, "BRMS_TEST_C6_TIME_VIRUS_EVENT_XOUTLIERS.Rds")
+
+```
+
+
+
+#### Pokes
+
+```{r BRMS TEST VIRUS Pokes EVENT, eval = FALSE}
+BRMS_TEST_C5_Pokes_VIRUS_EVENT<- brm(data = 
+                                subset(dat_all, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C5_Pokes_VIRUS_EVENT, "BRMS_TEST_C5_Pokes_VIRUS_EVENT.Rds")
+
+BRMS_TEST_C6_Pokes_VIRUS_EVENT<- brm(data = subset(dat_all, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            formula = n_Pokes ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C6_Pokes_VIRUS_EVENT, "BRMS_TEST_C6_PokesVIRUS_EVENT.Rds")
+
+
+## NORMAL XOUTLIERS 
+BRMS_TEST_C5_Pokes_VIRUS_EVENT_XOUTLIERS<- brm(data = 
+                                subset(dat_normal, Cohort == 5 & 
+                      Phase == "Test" & (Event == "Right" | Event == "Left")),
+                            n_Pokes ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C5_Pokes_VIRUS_EVENT_XOUTLIERS, "BRMS_TEST_C5_Pokes_VIRUS_EVENT_XOUTLIERS.Rds")
+
+BRMS_TEST_C6_Pokes_VIRUS_EVENT_XOUTLIERS<- brm(data = subset(dat_normal, Cohort == 6 & 
+                                     Phase == "Test" & 
+                                     (Event == "Right" | Event == "Left")),
+                            n_Pokes ~ Virus + Event + Virus:Event)
+
+saveRDS(BRMS_TEST_C6_Pokes_VIRUS_EVENT_XOUTLIERS, "BRMS_TEST_C6_Pokes_VIRUS_EVENT_XOUTLIERS.Rds")
+
+```
+
+
+## All Events (Left/Right/Center)
+
+```{r PRE BRMS-Total_Time_s-vs-Event-Right Left or Center, eval = FALSE}
+
+
+BRMS_C6_TEST_TIME_EVENT<- 
+  brm(
+  Total_Time_s ~  Event, 
+  data = subset(dat_all, Cohort ==6 & Phase == "Test"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_TEST_TIME_EVENT, "BRMS_C6_TEST_TIME_EVENT.Rds")
+
+
+BRMS_C6_TEST_TIME_EVENT_XOUTLIERS<- 
+  brm(
+  Total_Time_s ~  Event, 
+  data = subset(dat_normal, Cohort ==6 & Phase == "Test"),
+  family = gaussian())
+
+saveRDS(BRMS_C6_TEST_TIME_EVENT_XOUTLIERS, "BRMS_C6_TEST_TIME_EVENT_XOUTLIERS.Rds")
+
+```
+
+## Event and X_Side
+
+#### Time
+
+```{r Test BRMS Total_Time_s vs. EVent XSIDE, eval = FALSE}
+set.seed(420) #for reproducibility
+
+BRMS_C5_TEST_TIME_EVENT_XSIDE <- brm(
+                                 formula = Total_Time_s ~ Event + X_side + Event:X_side,
+                                 data = subset(dat_all,
+ (Event == "Left" | Event == "Right") & Phase == "Test" & Cohort == 5), 
+                                 family = gaussian())
+saveRDS(BRMS_C5_TEST_TIME_EVENT_XSIDE, "BRMS_C5_TEST_TIME_EVENT_XSIDE.Rds")
+
+BRMS_C6_TEST_TIME_EVENT_XSIDE <- brm(
+                                 formula = Total_Time_s ~ Event + X_side + Event:X_side,
+                                 data = subset(dat_all,
+ (Event == "Left" | Event == "Right") & Phase == "Test" & Cohort == 6), 
+                                 family = gaussian())
+saveRDS(BRMS_C6_TEST_TIME_EVENT_XSIDE, "BRMS_C6_TEST_TIME_EVENT_XSIDE.Rds")
+
+                                ## Outliers 
+                                 
+BRMS_TEST_C5_TEST_TIME_EVENT_XSIDE_XOUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Event + X_side + Event:X_side,
+                                 data = subset(dat_normal,
+ (Event == "Left" | Event == "Right") & Phase == "Test" & Cohort == 5), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_TEST_C5_TEST_TIME_EVENT_XSIDE_XOUTLIERS ,"BRMS_TEST_C5_TEST_TIME_EVENT_XSIDE_XOUTLIERS.Rds")
+                                 
+BRMS_TEST_C6_Time_Condition_XOUTLIERS <- brm(
+                                 formula = Total_Time_s ~ Event + X_side + Event:X_side,
+                                 data = subset(dat_normal,
+ (Event == "Left" | Event == "Right") & Phase == "Test" & Cohort == 6), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_TEST_C6_Time_Condition_XOUTLIERS,"BRMS_TEST_C6_TEST_TIME_EVENT_XSIDE_XOUTLIERS.Rds")
+
+```
+
+#### Pokes
+
+```{r Test BRMS Total_Pokes_s vs. EVent XSIDE, eval = FALSE}
+set.seed(420) #for reproducibility
+
+BRMS_C5_TEST_Pokes_EVENT_XSIDE <- brm(
+                    formula = n_Pokes ~ Event + X_side + Event:X_side,
+                    data = subset(dat_all,
+                                 (Event == "Left" | Event == "Right") & 
+                                 Phase == "Test" & Cohort == 5), 
+                                 family = gaussian())
+
+saveRDS(BRMS_C5_TEST_Pokes_EVENT_XSIDE, "BRMS_C5_TEST_Pokes_EVENT_XSIDE.Rds")
+
+BRMS_C6_TEST_Pokes_EVENT_XSIDE <- brm(
+                     formula = n_Pokes ~ Event + X_side + Event:X_side,
+                     data = subset(dat_all,
+                              (Event == "Left" | Event == "Right") & 
+                              Phase == "Test" & Cohort == 6), 
+                               family = gaussian())
+saveRDS(BRMS_C6_TEST_Pokes_EVENT_XSIDE, "BRMS_C6_TEST_Pokes_EVENT_XSIDE.Rds")
+
+                                ## Outliers 
+                                 
+BRMS_TEST_C5_TEST_Pokes_EVENT_XSIDE_XOUTLIERS <- brm(
+                               formula = n_Pokes ~ Event + X_side + Event:X_side,
+                               data = subset(dat_normal,
+                                (Event == "Left" | Event == "Right") & 
+                                  Phase == "Test" & Cohort == 5), 
+                               family = gaussian())
+                               saveRDS(BRMS_TEST_C5_TEST_Pokes_EVENT_XSIDE_XOUTLIERS ,"BRMS_TEST_C5_TEST_Pokes_EVENT_XSIDE_XOUTLIERS.Rds")
+                                 
+BRMS_TEST_C6_Pokes_Condition_XOUTLIERS <- brm(
+                    formula = n_Pokes ~ Event + X_side + Event:X_side,
+                                 data = subset(dat_normal,
+ (Event == "Left" | Event == "Right") & Phase == "Test" & Cohort == 6), 
+                                 family = gaussian())
+                                 saveRDS(BRMS_TEST_C6_Pokes_Condition_XOUTLIERS,"BRMS_TEST_C6_TEST_Pokes_EVENT_XSIDE_XOUTLIERS.Rds")
+
+```
+
+## Virus, Event and X-Side
+
+#### Time
+
+```{r TEST PHASE THE WAY I DID THE MODEL, eval = FALSE }
+#library(BEST)
+y1<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "5-CamK2-eYFP" & Cohort == 5) %>% select(Total_Time_s)%>% as_tibble()
+y2<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "5-CamK2-eYFP" & Cohort == 5) %>% select(Total_Time_s)%>% as_tibble()
+y3<- bind_rows(y1,y2) %>% pull()
+
+y4<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "9-CamK2-Jaws-GFP" & Cohort == 5) %>% select(Total_Time_s) %>% as_tibble()
+y5<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "9-CamK2-Jaws-GFP" & Cohort == 5) %>% select(Total_Time_s) %>% as_tibble()
+y6<- bind_rows(y4,y5) %>% pull()
+
+BESTout1<-BESTmcmc(y3, y6)
+
+y7<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "5-CamK2-eYFP" & Cohort == 6) %>% select(Total_Time_s)%>% as_tibble()
+y8<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "5-CamK2-eYFP" & Cohort == 6) %>% select(Total_Time_s)%>% as_tibble()
+y9<- bind_rows(y7,y8) %>% pull()
+
+y10<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "9-CamK2-Jaws-GFP" & Cohort == 6) %>% select(Total_Time_s) %>% as_tibble()
+y11<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "9-CamK2-Jaws-GFP" & Cohort == 6) %>% select(Total_Time_s) %>% as_tibble()
+y12<- bind_rows(y10,y11) %>% pull()
+
+BESTout2<-BESTmcmc(y9, y12)
+
+
+
+
+
+col1<- tibble("Parameter" = c("mu1", "mu2", "muDiff", "sigma1", "sigma2", "sigmaDiff", "nu", "log10nu", "effSz"))
+
+BESTtable<- bind_cols(col1,(summary(BESTout1) %>% as_data_frame() %>% select(1:6))) 
+
+BESTtable%>% kbl(digits = 1, caption = "Cohort 5: Congruent") %>% kable_classic(full_width= F)
+
+BESTtable2<- bind_cols(col1,(summary(BESTout2) %>% as_data_frame() %>% select(1:6))) 
+
+BESTtable2%>% kbl(digits = 1, caption = "Cohort 6: Congruent") %>% kable_classic(full_width= F)
+
+
+y20<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "5-CamK2-eYFP") %>% select(Total_Time_s)%>% as_tibble()
+y21<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "5-CamK2-eYFP") %>% select(Total_Time_s)%>% as_tibble()
+y22<- bind_rows(y20,y21) %>% pull()
+
+y23<- dat_all %>% filter(Phase == "Test" & Event == "Left" & X_side == "left" & Virus == "9-CamK2-Jaws-GFP") %>% select(Total_Time_s) %>% as_tibble()
+y24<- dat_all %>% filter(Phase == "Test" & Event == "Right" & X_side == "right" & Virus == "9-CamK2-Jaws-GFP") %>% select(Total_Time_s) %>% as_tibble()
+y25<- bind_rows(y23,y24) %>% pull()
+
+BESTout3<-BESTmcmc(y22, y25)
+
+```
+
+```{r BRMS TEST Virus TIME Event and X-Side, eval = FALSE}
+BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE<- brm(
+  data = subset(dat_all, 
+                  Cohort == 5 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = Total_Time_s ~ Virus + Event + X_side,
+          iter = 3000, warmup = 500, chains = 5, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE, "BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE.Rds")
+
+
+BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE<- brm(
+  data = subset(dat_all, 
+                  Cohort == 6 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = Total_Time_s ~ Virus + Event + X_side,
+          iter = 3000, warmup = 500, chains = 5, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE, "BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE.Rds")
+
+BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE_XOUTLIERS<- brm(
+  data = subset(dat_normal, 
+                  Cohort == 5 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = Total_Time_s ~ Virus + Event + X_side,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE_XOUTLIERS, "BRM_TEST_C5_Time_VIRUS_EVENT_XSIDE_XOUTLIERS.Rds")
+
+BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE_XOUTLIERS<- brm(
+  data = subset(dat_normal, 
+                  Cohort == 6 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = Total_Time_s ~ Virus + Event + X_side ,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE_XOUTLIERS, "BRM_TEST_C6_Time_VIRUS_EVENT_XSIDE_XOUTLIERS.Rds")
+```
+```{r BRMS TEST Virus POKES Event and X-Side, eval = FALSE}
+BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE<- brm(
+  data = subset(dat_all, 
+                  Cohort == 5 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = n_Pokes ~ Virus + Event + X_side + Virus:Event + Virus:X_side,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE, "BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE.Rds")
+
+
+BRM_TEST_C6_POKES_VIRUS_EVENT_XSIDE<- brm(
+  data = subset(dat_all, 
+                  Cohort == 6 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = n_Pokes ~ Virus + Event + X_side + Virus:Event + Virus:X_side,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE, "BRM_TEST_C6_POKES_VIRUS_EVENT_XSIDE.Rds")
+
+BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS<- brm(
+  data = subset(dat_normal, 
+                  Cohort == 5 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = n_Pokes ~ Virus + Event + X_side + Virus:Event:X_side,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS, "BRM_TEST_C5_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS.Rds")
+
+BRM_TEST_C6_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS<- brm(
+  data = subset(dat_normal, 
+                  Cohort == 6 & 
+                  Phase == "Test" & 
+                  (Event == "Right" | Event == "Left")),
+          formula = n_Pokes ~ Virus + Event + X_side+ Virus:Event:X_side,
+          iter = 2000, warmup = 500, chains = 4, cores = 4, seed = 5)
+
+saveRDS(BRM_TEST_C6_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS, "BRM_TEST_C6_POKES_VIRUS_EVENT_XSIDE_XOUTLIERS.Rds")
+```
+
